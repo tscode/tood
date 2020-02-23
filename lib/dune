@@ -1,0 +1,4 @@
+(library
+ (name tood)
+ (libraries base angstrom)
+ (flags -open Base))
