@@ -1,30 +1,38 @@
 open Types
 
-type pat = string
+type pat = String.t * String.Search_pattern.t
+
+let pat s = (s, String.Search_pattern.create s)
+let matches_pat pat str = String.Search_pattern.matches (snd pat) str
 
 type t =
-  | And      of t * t
-  | Or       of t * t
-  | Not      of t
-  | Index    of int
-  | Text     of pat
-  | Project  of pat list
-  | Context  of pat
-  | Priority of Entry.priority
-  | Due      of (Date.t option * Date.t option)
+  | And        of t * t
+  | Or         of t * t
+  | Not        of t
+  | Index      of int
+  | Text       of pat
+  | Project    of pat list
+  | Subproject of pat
+  | Context    of pat
+  | Priority   of Entry.priority
+  | Due        of (Date.t option * Date.t option)
   | True
   | False
+
+
 
 let and' a b  = And (a, b) 
 let or'  a b  = Or (a, b)
 let not' a    = Not a
 
-let index idx = Index idx
-let text p    = Text p
-let project p = Project p
-let context p = Context p
-let prio a    = Priority a
-let due a     = Due (Some a, Some a)
+let idx i  = Index i
+let due a  = Due (Some a, Some a)
+let text p = Text (pat p)
+let prio a = Priority a
+
+let context p    = Context (pat p)
+let project p    = Project (List.map ~f:pat p)
+let subproject p = Subproject (pat p)
 
 let due_range a b = match (a, b) with
   | _, None | None, _ -> Due (a, b)
@@ -35,41 +43,52 @@ let due_range a b = match (a, b) with
 (* Matching *)
 
 let matches_context s entry =
-  List.exists ~f:(String.is_substring ~substring:s) (Entry.context_tags entry)
+  List.exists ~f:(matches_pat s) (Entry.context_tags entry)
 
 let matches_project ps entry =
   let rec f pat project = match (pat, project) with
     | [], l -> true
     | l, [] -> false
-    | h :: t, h' :: t' -> (String.is_substring ~substring:h h') && (f t t')
+    | h :: t, h' :: t' -> (matches_pat h h') && (f t t')
   in
   List.exists ~f:(f ps) (Entry.project_tags entry)
+
+let matches_subproject p entry =
+  List.exists ~f:(List.exists ~f:(matches_pat p)) (Entry.project_tags entry)
 
 let matches_date a b entry = 
   let dates = Entry.due_tags entry in
   match (a, b) with
     | (None, None)     -> true
     | (Some a, None)   -> List.exists ~f:(Date.(<=) a) dates
-    | (None, Some b)   -> List.exists ~f:(Date.(>=) b) dates
-    | (Some a, Some b) -> 
-        List.exists ~f:(fun d -> Date.(a <= d && d <= b)) dates
+    | (None, Some b)   -> List.exists ~f:(Date.(>=) b) dates 
+    | (Some a, Some b) -> List.exists ~f:(fun d -> Date.(a <= d && d <= b)) dates
 
 let rec matches sel ?(index=0) entry = match sel with
-  | And (a, b) -> matches a ~index entry && matches b ~index entry
-  | Or  (a, b) -> matches a ~index entry || matches b ~index entry
-  | Not a      -> not (matches a ~index entry)
-  | Index i    -> index = i
-  | Text s     -> String.is_substring entry.Entry.text ~substring:s
-  | Context s  -> matches_context s entry
-  | Project ps -> matches_project ps entry
-  | Due (a, b) -> matches_date a b entry
-  | False      -> false
-  | True       -> true
-  | Priority p -> Entry.(prio_to_int p = prio_to_int entry.prio)
+  | And (a, b)   -> matches a ~index entry && matches b ~index entry
+  | Or  (a, b)   -> matches a ~index entry || matches b ~index entry
+  | Not a        -> not (matches a ~index entry)
+  | Index i      -> index = i
+  | Text pat     -> matches_pat pat Entry.(entry.text)
+  | Context pat  -> matches_context pat entry
+  | Project ps   -> matches_project ps entry
+  | Subproject p -> matches_subproject p entry
+  | Due (a, b)   -> matches_date a b entry
+  | False        -> false
+  | True         -> true
+  | Priority p   -> Entry.(prio_to_int p = prio_to_int entry.prio)
 
-let filter sel l = List.filteri ~f:(fun index x -> matches sel ~index x) l
+let filter sel l = List.filteri ~f:(fun i x -> matches sel ~index:(i+1) x) l
 let split sel l = (filter sel l, filter (not' sel) l)
 
+let filter_indexed sel l = 
+  let f (index, entry) = match matches sel ~index entry with
+    | true  -> Some (index, entry)
+    | false -> None
+  in
+  List.filter_map ~f l
+
+let split_indexed sel l = (filter_indexed sel l, filter_indexed (not' sel) l)
 
 module P = struct
   open Parser
@@ -88,12 +107,14 @@ module P = struct
     | And (a, b)    -> to_string a ^ " and " ^ to_string b
     | Not a         -> "~" ^ to_string a
     | Index i       -> Int.to_string i
-    | Text pat      -> "\'" ^ pat ^ "\'"
-    | Project ps    -> Tag.(to_string (Project ps))
-    | Context ps    -> Tag.(to_string (Context ps))
+    | Text pat      -> "'" ^ (fst pat) ^ "'"
+    | Project ps    -> Tag.(List.map ~f:fst ps |> project |> to_string)
+    | Subproject p  -> "/" ^ fst p ^ "/"
+    | Context pat   -> Tag.(fst pat |> context |> to_string)
     | Priority p    -> Entry.P.prio_to_string p
     | Due (a, b)    -> date_range_to_string a b
-    | True | False -> raise ImpossibleError
+    | True          -> "<true>"
+    | False         -> "<false>"
 
   (* Reading *)
 
@@ -101,36 +122,46 @@ module P = struct
   let or_mark  = string "or"  <|> string ","
   let not_mark = string "not" <|> string "~"
 
-  let quote_mark = char '"' <|> char '\''
-  let range_mark = char '-'
+  let quote_mark = char '\'' <|> char '"'
+  let range_mark = string ".."
 
-  let opt_tagmarker = opt (char Tag.P.tagmarker)
+  let tagmarker = char Tag.P.tagmarker
+  let opt_tagmarker = opt (char Tag.P.tagmarker) 
 
   let text =
-    let str = take_till (function '"' | '\'' -> true | _ -> false) in
+    let str = take_till (function '\'' | '"' -> true | _ -> false) in
     lift text (quote_mark *> str <* quote_mark)
 
   let due_range =
     let date = opt_tagmarker *> Tag.P.date_tag in
-    list [opt date <* ws <* range_mark; ws *> opt date] >>= function
-      | [None; None] -> fail "invalid range"
-      | [a; b]       -> return (due_range a b)
-      | _            -> raise ImpossibleError
+    (lift2 due_range (date <* ws <* range_mark >>| Option.some) (date >>| Option.some))
+    <|>
+    (lift (due_range None) (range_mark *> ws *> date >>| Option.some))
+    <|>
+    (lift (fun x -> due_range x None) (date <* ws <* range_mark >>| Option.some))
 
   let index_range =
     let range a b =
-      List.range a b
-      |> List.map ~f:index
+      List.range a (b+1)
+      |> List.map ~f:idx
       |> List.fold ~init:False ~f:or'
     in
     lift2 range (integer <* ws <* range_mark) (ws *> integer)
 
   let due   = lift due (opt_tagmarker *> Tag.P.date_tag)
-  let index = lift index integer
+  let index = lift idx integer
 
-  let context = Tag.P.(opt_tagmarker *> lift context context_tag)
-  let project = Tag.P.(opt_tagmarker *> lift project project_tag)
+  let context = tagmarker *> Tag.P.(lift context context_tag)
+  let project = tagmarker *> Tag.P.(lift project project_tag)
+  let subproject = char '/' *> Tag.P.(lift subproject symbol) <* char '/'
+
   let prio    = lift prio Entry.P.prio
+  let boolean =
+    string "<true>" *> return True <|> string "<false>" *> return False
+
+  let fuzzy = symbol >>| fun sym ->
+    let p = pat sym in
+      or' (Text p) (or' (Context p)  (Subproject p))
 
 
   let fixpoint p =
@@ -145,15 +176,18 @@ module P = struct
       ; index
       ; text
       ; prio
+      ; fuzzy
       ; project
+      ; subproject
       ; context 
+      ; boolean
       ; not'
       ; par
     ]
     in
     chainl1 (chainl1 factor and') or'
 
-  let parser = fix fixpoint
+  let parser = fix fixpoint <|> ws *> return True
 
   let of_string = parse_string (only parser)
 

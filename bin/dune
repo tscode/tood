@@ -1,0 +1,4 @@
+(executable
+ (name td)
+ (libraries tood core cmdliner)
+ (flags -open Core))

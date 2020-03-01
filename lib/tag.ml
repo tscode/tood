@@ -16,15 +16,20 @@ module P = struct
 
   (* Syntax *)
 
-  let tagmarker   = '#'
+  let tagmarker   = '+'
   let project_sep = '/'
 
   (* Writing *)
 
+  let project_to_string = function
+    | []  -> ""
+    | [p] -> p ^ String.of_char project_sep
+    | ts  -> String.concat ~sep:(String.of_char project_sep) ts
+
   let to_string = 
     let m = String.of_char tagmarker in function
       | Context t  -> m ^ t
-      | Project ts -> m ^ String.concat ~sep:(String.of_char project_sep) ts
+      | Project ts -> m ^ project_to_string ts
       | Due date   -> m ^ Date.to_string date
 
   (* Reading *)
