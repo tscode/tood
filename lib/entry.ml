@@ -111,31 +111,6 @@ module P = struct
     |> sub ~sep (d', List.map ~f:prepend_tag dtags |> collect)
     in if strip then String.strip output else output
 
-    (*
-
-  let substitute sep pat value str =
-    let open String.Search_pattern in
-    let value_ = if String.(value = "") then value else value ^ sep in
-    let str = replace_all (create (pat ^ "_")) ~in_:str ~with_:value_ in
-    replace_all (create pat) ~in_:str ~with_:value
-
-  let format ~fmt ~fmt_date ?(tag_sep=" ") entry = 
-    let prepend_tag = (^) (String.of_char Tag.P.tagmarker) in
-    let collect = String.concat ~sep:tag_sep in
-    let ctags = context_tags entry in
-    let ptags = project_tags entry |> List.map ~f:Tag.P.project_to_string in
-    let dtags = due_tags entry |> List.map ~f:(Date.P.format ~fmt:fmt_date)
-    in fmt 
-    |> substitute tag_sep "%r" (prio_to_string entry.prio)
-    |> substitute tag_sep "%t" entry.text
-    |> substitute tag_sep "%p" (collect ptags)
-    |> substitute tag_sep "%c" (collect ctags)
-    |> substitute tag_sep "%d" (collect dtags)
-    |> substitute tag_sep "%P" (collect (List.map ~f:prepend_tag ptags))
-    |> substitute tag_sep "%C" (collect (List.map ~f:prepend_tag ctags))
-    |> substitute tag_sep "%D" (collect (List.map ~f:prepend_tag dtags))
-
-    *)
 
   (* Should also work but will probably be much slower? 
    * TODO: Benchmark this!
@@ -143,9 +118,9 @@ module P = struct
 
   let to_string entry =
     String.concat ~sep:" " [
-       prio_to_string entry.prio
-     ; entry.text
-     ; List.map ~f:Tag.to_string entry.tags |> String.concat ~sep:" "
+        prio_to_string entry.prio
+      ; entry.text
+      ; List.map ~f:Tag.to_string entry.tags |> String.concat ~sep:" "
     ]
 
   let number_of_chars i = Int.to_string i |> String.length
@@ -179,14 +154,20 @@ module P = struct
     let f prio text tags = {text; tags; prio} in
     Parser.(lift3 f (prio <* ws) text (many (ws *> Tag.P.parser)))
 
-  let parser_relaxed =
-    let f prio text tags = {text; tags; prio} in
-    Parser.(
-      lift3 f (option Default (prio <* ws)) text (many (ws *> Tag.P.parser))
-    )
+  let parser_relaxed = function
+    | (fmt, None) -> Error ("date format " ^ fmt ^ " is invalid for parsing")
+    | (_, Some date_parser) ->
+      let f prio text tags = {text; tags; prio} in
+      let tag_parser  = Tag.P.parser_custom_date (Date.P.parser <|> date_parser) in
+      let tags_parser = many (ws *> tag_parser) in
+      Ok Parser.(lift3 f (option Default (prio <* ws)) text tags_parser)
 
   let of_string = parse_string (only parser)
-  let of_string_relaxed = parse_string (only parser_relaxed)
+
+  let of_string_relaxed ?(fmt_date=Date.default_fmt) str =
+    match parser_relaxed fmt_date with
+    | Ok entry_parser -> parse_string (only entry_parser) str
+    | Error err       -> Error err
 
 end
 
@@ -205,11 +186,11 @@ let of_string_relaxed = P.of_string_relaxed
 
 let of_string_exn str =
   match of_string str with
-    | Ok entry -> entry
+    | Ok entry  -> entry
     | Error err -> raise (ArgumentError err)
 
-let of_string_relaxed_exn str =
-  match of_string_relaxed str with
-    | Ok entry -> entry
+let of_string_relaxed_exn ?fmt_date str =
+  match of_string_relaxed ?fmt_date str with
+    | Ok entry  -> entry
     | Error err -> raise (ArgumentError err)
 

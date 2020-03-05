@@ -44,10 +44,13 @@ module Date : sig
    *
    * This will only work if the format string contains the placeholders %d, %m,
    * %y exactly once each, and if the char '%' does not appear otherwise.
+   * Then is_fmt_legible fmt = true.
    *
    * *)
 
-  val of_string_fmt : fmt : fmt -> string -> t res
+  val is_fmt_legible   : fmt -> bool
+
+  val of_string_fmt     : fmt : fmt -> string -> t res
   val of_string_fmt_exn : fmt : fmt -> string -> t
 end
 
@@ -84,10 +87,7 @@ module Entry : sig
   val project_tags : t -> Symbol.t list list
   val due_tags     : t -> Date.t list
 
-  val of_string_relaxed : string -> t res
-  val of_string_relaxed_exn : string -> t
-
-  val index : t list -> (int * t) list
+  val index      : t list -> (int * t) list
   val index_with : int list -> t list -> (int * t) list res
 
   val min_index : (int * t) list -> int option
@@ -95,6 +95,11 @@ module Entry : sig
 
   val deindex : (int * t) list -> t list
   val indices : (int * t) list -> int list
+
+  (* Less strict parsing with custom date formats *)
+
+  val of_string_relaxed     : ?fmt_date : Date.fmt -> string -> t res
+  val of_string_relaxed_exn : ?fmt_date : Date.fmt -> string -> t
 
   (* Entry formatting *)
 
@@ -117,7 +122,11 @@ module Entry : sig
 end
 
 module Select : sig
-  include S
+  type t
+
+  val of_string     : ?fmt_date : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+  val to_string : t -> string
 
   val and' : t -> t -> t
   val or'  : t -> t -> t

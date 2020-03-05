@@ -7,16 +7,17 @@ let _version = "v0.0"
 (* Config type and config file handling *)
 
 type config = {
-    todo_path : string
-  ; done_path : string
-  ; sync_cmd  : string option
-  ; date_fmt  : string
+    todo_path      : string
+  ; done_path      : string
+  ; sync_cmd       : string option
+  ; date_fmt       : string
+  ; date_fmt_parse : string option
   ; entry_fmt_flat : string
   ; entry_fmt_tree : string
 }
 
 (* Config format documentation
- * date_fmt : %d -> day, %m -> month, %y -> year
+ * date_fmt  : %d -> day, %m -> month, %y -> year
  * entry_fmt : %i -> index, %I -> index left, %J -> index right,
  *             %r -> priority, %t -> text,
  *             %p -> project without tag, %P -> project with tag
@@ -25,10 +26,11 @@ type config = {
  **)
 
 let default_config = {
-    todo_path = "./todo.tood"
-  ; done_path = "./done.tood"
-  ; sync_cmd  = None
-  ; date_fmt  = "%d.%m.%y"
+    todo_path      = "./todo.tood"
+  ; done_path      = "./done.tood"
+  ; sync_cmd       = None
+  ; date_fmt       = "%y-%m-%y"
+  ; date_fmt_parse = None
   ; entry_fmt_flat = "%J %r %t %P_%C_%D"
   ; entry_fmt_tree = "%J %r %t %C_%D"
 }
@@ -36,10 +38,11 @@ let default_config = {
 let default_config_path = "~/.config/td/conf"
 
 let add_config_option config (key, value) = match key with
-  | "todo_path" -> { config with todo_path = value }
-  | "done_path" -> { config with done_path = value }
-  | "sync_cmd"  -> { config with sync_cmd = Some value }
-  | "date_fmt"  -> { config with date_fmt  = value }
+  | "todo_path"      -> { config with todo_path = value }
+  | "done_path"      -> { config with done_path = value }
+  | "sync_cmd"       -> { config with sync_cmd = Some value }
+  | "date_fmt"       -> { config with date_fmt  = value }
+  | "date_fmt_parse" -> { config with date_fmt_parse = Some value }
   | "entry_fmt_flat" -> { config with entry_fmt_flat = value }
   | "entry_fmt_tree" -> { config with entry_fmt_tree = value }
   | _ -> raise (ConfigError ("invalid key: " ^ key))
@@ -55,7 +58,7 @@ let resolve_path path =
 let parse_config_file path = let open Tood.Parser in
   let path   = resolve_path path in
   let key    = symbol <* ws <* char ':' in
-  let value  = take_while (fun _ -> true) >>| String.strip in
+  let value  = take_all >>| String.strip in
   let t2 a b = Some (a, b) in
   let parser = lift2 t2 key value <|> only ws *> return None in
   let f line = match parse_string parser line with
@@ -67,10 +70,8 @@ let parse_config_file path = let open Tood.Parser in
     |> List.fold ~init:default_config ~f:add_config_option
   with
    Sys_error _ -> 
-     let err = 
-       "Config file '" ^ path ^ "' cannot be opened. Using fallback options."
-     in
-     prerr_endline err;
+     prerr_endline
+       ("Config file '" ^ path ^ "' cannot be opened. Using fallback options.");
      default_config
 
 
@@ -126,16 +127,22 @@ let prompt_confirmation msg default =
   end
   in read_answer ()
 
+let get_fmt_date config = match config.date_fmt_parse with
+  | None     -> Date.fmt config.date_fmt
+  | Some str -> Date.fmt str
+
+
 (* td commands *)
 
 let td_add config str =
-  match Entry.of_string_relaxed str with
+  let fmt_date = get_fmt_date config in
+  match Entry.of_string_relaxed ~fmt_date str with
   | Error err -> prerr_endline err
   | Ok entry  -> append_todo_file [entry] config.todo_path
 
 let move config verbose noprompt sel msg from_path to_path =
   let entries = Entry.index (parse_todo_file from_path) in
-  let ticked, unticked =
+  let selected, unselected =
     Select.split_indexed sel entries
   in
   match entries with
@@ -143,10 +150,10 @@ let move config verbose noprompt sel msg from_path to_path =
   | entries ->
     if verbose then begin
       print_endline "Selected entries:"; 
-      ticked |> layout_entries config `Flat |> print_endline;
+      selected |> layout_entries config `Flat |> print_endline;
     end;
     let proceed =
-      match noprompt || List.length entries <= 1 with
+      match noprompt || List.length selected <= 1 with
       | true  -> true
       | false ->
         let l = List.length entries |> Int.to_string in
@@ -157,14 +164,15 @@ let move config verbose noprompt sel msg from_path to_path =
     match proceed with
     | false -> print_endline "Aborted."
     | true  ->
-      write_todo_file (Entry.deindex unticked) from_path;
+      write_todo_file (Entry.deindex unselected) from_path;
       match to_path with
       | None -> ()
       | Some to_path ->
-        append_todo_file (Entry.deindex ticked) to_path
+        append_todo_file (Entry.deindex selected) to_path
 
-let td_do config verbose noprompt str =
-  match Select.of_string str with
+let td_do config verbose noprompt filter =
+  let fmt_date = get_fmt_date config in
+  match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
   | Ok sel -> 
     let msg l = 
@@ -174,8 +182,9 @@ let td_do config verbose noprompt str =
       config verbose noprompt sel msg
       config.todo_path (Some config.done_path)
 
-let td_undo config verbose noprompt str =
-  match Select.of_string str with
+let td_undo config verbose noprompt filter =
+  let fmt_date = get_fmt_date config in
+  match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
   | Ok sel -> 
     let msg l =
@@ -185,8 +194,9 @@ let td_undo config verbose noprompt str =
       config verbose noprompt sel msg
       config.done_path (Some config.todo_path)
 
-let td_rm config verbose noprompt source str =
-  match Select.of_string str with
+let td_rm config verbose noprompt source filter =
+  let fmt_date = get_fmt_date config in
+  match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
   | Ok sel -> 
     let msg, path = match source with
@@ -205,8 +215,9 @@ let td_rm config verbose noprompt source str =
     in
     move config verbose noprompt sel msg path None
 
-let td_ls config filter source order layout =
-  match Select.of_string filter with
+let td_ls config source order layout filter =
+  let fmt_date = get_fmt_date config in
+  match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
   | Ok sel -> 
     let entries = match source with
@@ -374,7 +385,7 @@ let ls_cmd =
     Arg.(value & opt string "none" & info ["o"; "order"] ~docv:"ORDER" ~doc)
     |> Term.(app (const order))
   in
-  Term.(const td_ls $ config_t $ filter_t $ source_t $ order_t $ layout_t),
+  Term.(const td_ls $ config_t $ source_t $ order_t $ layout_t $ filter_t),
   Term.info "ls" ~doc ~sdocs:Manpage.s_common_options ~man
 
 let default_cmd =

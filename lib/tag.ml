@@ -42,10 +42,12 @@ module P = struct
       (symbol <* char project_sep)
       (sep_by (char project_sep) symbol)
 
-  let parser =
+  let parser_custom_date date_parser =
         (char tagmarker *> project_tag >>| project)
     <|> (char tagmarker *> context_tag >>| context)
-    <|> (char tagmarker *> date_tag    >>| due)
+    <|> (char tagmarker *> date_parser >>| due)
+
+  let parser = parser_custom_date date_tag
 
   let of_string = parse_string (only parser) 
 

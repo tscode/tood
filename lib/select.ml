@@ -132,8 +132,8 @@ module P = struct
     let str = take_till (function '\'' | '"' -> true | _ -> false) in
     lift text (quote_mark *> str <* quote_mark)
 
-  let due_range =
-    let date = opt_tagmarker *> Tag.P.date_tag in
+  let due_range date_parser =
+    let date = opt_tagmarker *> date_parser <|> Date.P.parser in
     (lift2 due_range (date <* ws <* range_mark >>| Option.some) (date >>| Option.some))
     <|>
     (lift (due_range None) (range_mark *> ws *> date >>| Option.some))
@@ -148,7 +148,7 @@ module P = struct
     in
     lift2 range (integer <* ws <* range_mark) (ws *> integer)
 
-  let due   = lift due (opt_tagmarker *> Tag.P.date_tag)
+  let due date_parser = lift due (opt_tagmarker *> date_parser <|> Date.P.parser)
   let index = lift idx integer
 
   let context = tagmarker *> Tag.P.(lift context context_tag)
@@ -164,14 +164,14 @@ module P = struct
       or' (Text p) (or' (Context p)  (Subproject p))
 
 
-  let fixpoint p =
+  let fixpoint date_parser p =
     let and' = ws *> and_mark *> ws *> return and' in
     let or'  = ws *> or_mark *> ws *> return or' in
     let not' = lift not' (not_mark *> ws *> p) in
     let par  = char '(' *> ws *> p <* ws <* char ')' in
     let factor = choice [
-        due_range
-      ; due
+        due_range date_parser
+      ; due date_parser
       ; index_range
       ; index
       ; text
@@ -187,16 +187,22 @@ module P = struct
     in
     chainl1 (chainl1 factor and') or'
 
-  let parser = fix fixpoint <|> ws *> return True
+  let parser date_parser =
+    fix (fixpoint date_parser) <|> ws *> return True
 
-  let of_string = parse_string (only parser)
+  let of_string ?(fmt_date=Date.default_fmt) str =
+    match snd fmt_date with
+    | Some date_parser -> parse_string (only (parser date_parser)) str
+    | None             ->
+      Error ("date format '" ^ fst fmt_date ^ "' is invalid for parsing")
 
 end
 
 let to_string = P.to_string
 let of_string = P.of_string
-let of_string_exn str =
-  match of_string str with
+
+let of_string_exn ?fmt_date str =
+  match of_string ?fmt_date str with
     | Ok sel -> sel
     | Error err -> raise (ArgumentError err)
 

@@ -8,6 +8,10 @@ type t = {
 
 type fmt = string * t Parser.t option
 
+let is_fmt_legible = function
+  | (_, Some _) -> true
+  | (_, None)   -> false
+
 let is_valid year month day = 
   let feb = if year % 4 = 0 then 29 else 28 in
   let lower = 1 <= day in
@@ -105,7 +109,7 @@ module P = struct
     in
     let f t1 a t2 b t3 c t4 =
       match has_day_month_year a b c with
-      | false -> Error ("format string '" ^ fmt_str ^ "' is invalid for parsing")
+      | false -> Error ("date format '" ^ fmt_str ^ "' is invalid for parsing")
       | true  -> Ok begin
         let date_parser = list [ 
             (string t1 *> integer >>| date_pair a)
