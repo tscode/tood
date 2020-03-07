@@ -125,18 +125,21 @@ module P = struct
 
   let number_of_chars i = Int.to_string i |> String.length
 
-  let format_index ~fmt ~fmt_date ~max_index ?(tag_sep=" ") (index, entry) =
+  let format_index ~fmt ?fmt_date ?max_index 
+                   ?(strip=true) ?(tag_sep=" ") (index, entry) =
     let index_str = Int.to_string index in
+    let max_index = Option.value ~default:index max_index in
     let padding =
       let l = number_of_chars max_index - number_of_chars index in
       String.make (Int.max 0 l) ' '
     in
     let sep = tag_sep in
     let open Sub in
-    format ~fmt ~fmt_date ~tag_sep entry
+    let output = format ~fmt ?fmt_date ~tag_sep ~strip:false entry
     |> sub ~sep (i,  index_str)
     |> sub ~sep (i', index_str ^ padding)
     |> sub ~sep (j', padding ^ index_str)
+    in if strip then String.strip output else output
 
 
   (* Reading *)
@@ -152,13 +155,13 @@ module P = struct
 
   let parser =
     let f prio text tags = {text; tags; prio} in
-    Parser.(lift3 f (prio <* ws) text (many (ws *> Tag.P.parser)))
+    Parser.(lift3 f (prio <* ws) text (many (ws *> Tag.P.parser Date.P.parser)))
 
   let parser_relaxed = function
     | (fmt, None) -> Error ("date format " ^ fmt ^ " is invalid for parsing")
     | (_, Some date_parser) ->
       let f prio text tags = {text; tags; prio} in
-      let tag_parser  = Tag.P.parser_custom_date (Date.P.parser <|> date_parser) in
+      let tag_parser  = Tag.P.parser (Date.P.parser <|> date_parser) in
       let tags_parser = many (ws *> tag_parser) in
       Ok Parser.(lift3 f (option Default (prio <* ws)) text tags_parser)
 

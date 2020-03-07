@@ -12,7 +12,7 @@ let is_fmt_legible = function
   | (_, Some _) -> true
   | (_, None)   -> false
 
-let is_valid year month day = 
+let is_valid ~day ~month ~year = 
   let feb = if year % 4 = 0 then 29 else 28 in
   let lower = 1 <= day in
   let upper = match month with
@@ -45,8 +45,8 @@ module P = struct
 
   (* Default date format string *)
 
-  let default_fmt_string = "%y-%m-%d" (* ISO 8601 *)
-  let default_fmt = ("%y-%m-%d", Error "not initialized yet")
+  let default_fmt_string     = "%y-%m-%d" (* ISO 8601 *)
+  let default_fmt_unresolved = ("%y-%m-%d", Error "not initialized yet")
 
   (* Writing *)
 
@@ -59,7 +59,7 @@ module P = struct
     in
     if strip then String.strip output else output
 
-  let to_string date = format ~fmt:default_fmt date
+  let to_string date = format ~fmt:default_fmt_unresolved date
 
   (* Reading default date format *)
 
@@ -77,8 +77,6 @@ module P = struct
     | Ok date   -> return date
     | Error msg -> fail msg
 
-  let of_string = parse_string (only parser)
-
   (* Reading custom date formats *)
 
   (* The following two auxiliary functions relies on the fact that `Day < `Month
@@ -93,6 +91,9 @@ module P = struct
 
   let has_day_month_year p1 p2 p3 =
     Poly.(List.sort ~compare [p1; p2; p3;] = [`Day; `Month; `Year])
+
+  let fmt_invalid_parsing_msg fmt_str =
+    "date format '" ^ (fmt_str) ^ "' is invalid for parsing"
 
   let parser_fmt fmt_str =
     let str = take_till_unescaped (function '%' -> true | _ -> false) in
@@ -109,7 +110,7 @@ module P = struct
     in
     let f t1 a t2 b t3 c t4 =
       match has_day_month_year a b c with
-      | false -> Error ("date format '" ^ fmt_str ^ "' is invalid for parsing")
+      | false -> Error (fmt_invalid_parsing_msg fmt_str)
       | true  -> Ok begin
         let date_parser = list [ 
             (string t1 *> integer >>| date_pair a)
@@ -133,9 +134,12 @@ module P = struct
     | Ok date_parser -> (fmt_str, Some date_parser)
     | Error _        -> (fmt_str, None)
 
-  let of_string_fmt ~fmt str = match snd fmt with
+  let default_fmt = fmt default_fmt_string
+
+  let of_string ?(fmt=default_fmt) str = match snd fmt with
     | Some p -> parse_string (only p) str
-    | None   -> Error ("format string '" ^ fst fmt ^ "' is invalid for parsing")
+    | None   -> Error (fmt_invalid_parsing_msg (fst fmt))
+
 
 end
 
@@ -143,21 +147,19 @@ end
 
 let fmt = P.fmt
 let fmt_to_string = fst
-let default_fmt = fmt P.default_fmt_string
+let default_fmt = P.default_fmt
+
+let with_fmt ?(fmt=default_fmt) ~f = match snd fmt with
+  | Some parser -> f (fst fmt) parser
+  | None        -> Error (P.fmt_invalid_parsing_msg (fst fmt))
 
 let format = P.format
 let to_string = P.to_string
-
 let of_string = P.of_string
-let of_string_fmt = P.of_string_fmt
 
-let of_string_exn str =
-  match of_string str with
-    | Ok date   -> date
-    | Error msg -> raise (ArgumentError msg)
 
-let of_string_fmt_exn ~fmt str =
-  match of_string_fmt ~fmt str with
+let of_string_exn ?fmt str =
+  match of_string ?fmt str with
     | Ok date   -> date
     | Error msg -> raise (ArgumentError msg)
 

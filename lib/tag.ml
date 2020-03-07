@@ -42,21 +42,21 @@ module P = struct
       (symbol <* char project_sep)
       (sep_by (char project_sep) symbol)
 
-  let parser_custom_date date_parser =
+  let parser date_parser =
         (char tagmarker *> project_tag >>| project)
     <|> (char tagmarker *> context_tag >>| context)
     <|> (char tagmarker *> date_parser >>| due)
 
-  let parser = parser_custom_date date_tag
-
-  let of_string = parse_string (only parser) 
+  let of_string ?(fmt_date=Date.default_fmt) str =
+    let f _ date_parser = parse_string (only (parser date_parser)) str in
+    Date.with_fmt ~fmt:fmt_date ~f
 
 end
 
 let to_string = P.to_string
 let of_string = P.of_string
 
-let of_string_exn str = match of_string str with
+let of_string_exn ?fmt_date str = match of_string ?fmt_date str with
   | Ok tag -> tag
   | Error _ -> raise (ArgumentError ("invalid tag '" ^ str ^ "'"))
 

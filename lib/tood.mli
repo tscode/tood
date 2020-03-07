@@ -1,7 +1,6 @@
 
 type 'a res = ('a, string) Result.t
 
-
 exception ParseError    of string
 exception ArgumentError of string
 
@@ -19,7 +18,9 @@ module Symbol : S
 
 
 module Date : sig
-  include S
+  type t
+
+  val to_string : t -> string
 
   val create     : day : int -> month : int -> year : int -> t res
   val create_exn : day : int -> month : int -> year : int -> t
@@ -28,7 +29,7 @@ module Date : sig
   val month : t -> int
   val year  : t -> int
 
-  val is_valid : int -> int -> int -> bool
+  val is_valid : day : int -> month : int -> year : int -> bool
 
   (* Date formatting *)
 
@@ -36,7 +37,6 @@ module Date : sig
 
   val fmt           : string -> fmt
   val default_fmt   : fmt
-
   val fmt_to_string : fmt -> string
   val format        : fmt : fmt -> ?strip : bool -> t -> string
 
@@ -50,8 +50,8 @@ module Date : sig
 
   val is_fmt_legible   : fmt -> bool
 
-  val of_string_fmt     : fmt : fmt -> string -> t res
-  val of_string_fmt_exn : fmt : fmt -> string -> t
+  val of_string     : ?fmt : fmt -> string -> t res
+  val of_string_exn : ?fmt : fmt -> string -> t
 end
 
 
@@ -61,7 +61,9 @@ module Tag : sig
     | Project of Symbol.t list
     | Due     of Date.t
 
-  include S with type t := t
+  val to_string     : t -> string
+  val of_string     : ?fmt_date : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
 
   val context : Symbol.t -> t
   val project : Symbol.t list -> t
@@ -115,10 +117,11 @@ module Entry : sig
                ?strip    : bool     ->
                ?tag_sep  : string   -> t -> string
 
-  val format_index : fmt       : fmt      -> 
-                     fmt_date  : Date.fmt -> 
-                     max_index : int      -> 
-                     ?tag_sep  : string   -> int * t -> string
+  val format_index : fmt        : fmt      -> 
+                     ?fmt_date  : Date.fmt -> 
+                     ?max_index : int      -> 
+                     ?strip     : bool     -> 
+                     ?tag_sep   : string   -> int * t -> string
 end
 
 module Select : sig
