@@ -66,7 +66,7 @@ module P = struct
   let err_msg day month year =
     "date '" ^ to_string {day; month; year} ^ "' is invalid"
 
-  let create year month day = match is_valid year month day with
+  let create year month day = match is_valid ~day ~month ~year with
     | true  -> Ok {day; month; year}
     | false -> Error (err_msg day month year)
 

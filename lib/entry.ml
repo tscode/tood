@@ -165,12 +165,17 @@ module P = struct
       let tags_parser = many (ws *> tag_parser) in
       Ok Parser.(lift3 f (option Default (prio <* ws)) text tags_parser)
 
-  let of_string = parse_string (only parser)
+  let of_string str = match parse_string (only parser) str with
+  | Ok str  -> Ok str
+  | Error _ -> Error ("cannot parse entry '" ^ str ^ "'")
+  (* TODO: maybe we can get improved error messages from angstrom *)
 
   let of_string_relaxed ?(fmt_date=Date.default_fmt) str =
     match parser_relaxed fmt_date with
-    | Ok entry_parser -> parse_string (only entry_parser) str
     | Error err       -> Error err
+    | Ok entry_parser -> match parse_string (only entry_parser) str with
+      | Ok entry -> Ok entry
+      | Error _ -> Error ("cannot understand entry '" ^ str ^ "'")
 
 end
 

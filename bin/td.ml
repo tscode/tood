@@ -16,15 +16,6 @@ type config = {
   ; entry_fmt_tree : string
 }
 
-(* Config format documentation
- * date_fmt  : %d -> day, %m -> month, %y -> year
- * entry_fmt : %i -> index, %I -> index left, %J -> index right,
- *             %r -> priority, %t -> text,
- *             %p -> project without tag, %P -> project with tag
- *             %c -> context without tag, %C -> context with tag
- *             %d -> due date without tag, %D -> due date with tag
- **)
-
 let default_config = {
     todo_path      = "./todo.tood"
   ; done_path      = "./done.tood"
@@ -70,20 +61,28 @@ let parse_config_file path = let open Tood.Parser in
     |> List.fold ~init:default_config ~f:add_config_option
   with
    Sys_error _ -> 
-     prerr_endline
-       ("Config file '" ^ path ^ "' cannot be opened. Using fallback options.");
+     print_endline (
+       "< info: file '" 
+       ^ path
+       ^ "' cannot be accessed, using fallback config options >"
+     );
      default_config
 
 
 (* High level todo file operations *)
 
-let parse_todo_file ?(warn=false) path =
+let parse_todo_file ?(fail=false) path =
   try
-  List.map ~f:Entry.of_string_exn (In_channel.read_lines (resolve_path path))
+    let lines = In_channel.read_lines (resolve_path path) in
+    List.map ~f:Entry.of_string_exn lines
   with
-  _ -> match warn with
-  | true  -> prerr_endline ("Cannot open file '" ^ path ^ "'"); []
-  | false -> []
+  | Sys_error err as error -> begin match fail with
+    | true  -> raise error
+    | false -> print_endline
+      ("< info: file '" ^ path ^ "' cannot be accessed >");
+      []
+  end
+  | error -> raise error
 
 let write_todo_file entries path =
   List.map ~f:Entry.to_string entries
@@ -99,6 +98,14 @@ let append_todo_file entries path =
 
 (* Formatting entry lists for printing purposes *)
 
+let is_done ~done_index (index, entry) =
+  match done_index, Int.(done_index <= index) with
+  | 0, _     -> false
+  | _, value -> value
+
+let layout_entry ?(style=None) ?(offset=0) ~fmt ~fmt_date ~max_index entry =
+  (String.make offset ' ') ^ (Entry.format_index ~fmt ~fmt_date ~max_index entry)
+
 let layout_entries config layout indexed_entries =
   match Entry.max_index indexed_entries with
   | None -> "< no entries to print >"
@@ -107,20 +114,19 @@ let layout_entries config layout indexed_entries =
     | `Flat ->
       let fmt = Entry.fmt config.entry_fmt_flat in
       let fmt_date = Date.fmt config.date_fmt in
-      let f = Entry.format_index ~fmt ~fmt_date ~max_index in
+      let f = layout_entry ~fmt ~fmt_date ~max_index in
       List.map ~f indexed_entries |> String.concat ~sep:"\n"
     | `Tree -> raise (Failure "tree layout not yet implemented")
 
 let sort_entries sort indexed_entries = match sort with
   | `None -> indexed_entries
 
-
 let prompt_confirmation msg default =
-  let msg = msg ^ (if default then " [Y/n]" else " [N/y]") in
+  let msg = msg ^ (if default then " [Y/n] " else " [N/y] ") in
   print_endline msg;
   let rec read_answer () = begin
     match In_channel.(input_line stdin) |> Option.map ~f:String.lowercase with
-    | None -> default
+    | None | Some "" -> default
     | Some "y"  -> true
     | Some "n"  -> false
     | _ -> print_endline "You must type 'y' or 'n'"; read_answer ()
@@ -134,11 +140,10 @@ let get_fmt_date config = match config.date_fmt_parse with
 
 (* td commands *)
 
-let td_add config str =
+let _td_add config entry_str =
   let fmt_date = get_fmt_date config in
-  match Entry.of_string_relaxed ~fmt_date str with
-  | Error err -> prerr_endline err
-  | Ok entry  -> append_todo_file [entry] config.todo_path
+  let entry = Entry.of_string_relaxed_exn ~fmt_date entry_str in
+  append_todo_file [entry] config.todo_path
 
 let move config verbose noprompt sel msg from_path to_path =
   let entries = Entry.index (parse_todo_file from_path) in
@@ -149,7 +154,7 @@ let move config verbose noprompt sel msg from_path to_path =
   | [] -> print_endline "< no entries selected >"
   | entries ->
     if verbose then begin
-      print_endline "Selected entries:"; 
+      print_endline "selected entries:"; 
       selected |> layout_entries config `Flat |> print_endline;
     end;
     let proceed =
@@ -162,7 +167,7 @@ let move config verbose noprompt sel msg from_path to_path =
           true
     in
     match proceed with
-    | false -> print_endline "Aborted."
+    | false -> print_endline "< aborted >"
     | true  ->
       write_todo_file (Entry.deindex unselected) from_path;
       match to_path with
@@ -170,7 +175,7 @@ let move config verbose noprompt sel msg from_path to_path =
       | Some to_path ->
         append_todo_file (Entry.deindex selected) to_path
 
-let td_do config verbose noprompt filter =
+let _td_do config verbose noprompt filter =
   let fmt_date = get_fmt_date config in
   match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
@@ -182,7 +187,7 @@ let td_do config verbose noprompt filter =
       config verbose noprompt sel msg
       config.todo_path (Some config.done_path)
 
-let td_undo config verbose noprompt filter =
+let _td_undo config verbose noprompt filter =
   let fmt_date = get_fmt_date config in
   match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
@@ -194,7 +199,7 @@ let td_undo config verbose noprompt filter =
       config verbose noprompt sel msg
       config.done_path (Some config.todo_path)
 
-let td_rm config verbose noprompt source filter =
+let _td_rm config verbose noprompt source filter =
   let fmt_date = get_fmt_date config in
   match Select.of_string ~fmt_date filter with
   | Error err -> prerr_endline err
@@ -215,16 +220,14 @@ let td_rm config verbose noprompt source filter =
     in
     move config verbose noprompt sel msg path None
 
-let td_ls config source order layout filter =
+let _td_ls config source order layout filter =
   let fmt_date = get_fmt_date config in
-  match Select.of_string ~fmt_date filter with
-  | Error err -> prerr_endline err
-  | Ok sel -> 
-    let entries = match source with
-      | `Todo -> parse_todo_file config.todo_path
-      | `Done -> parse_todo_file config.done_path
-      | `All  -> raise (Failure "NOT IMPLEMENTED YET")
-        (*parse_todo_file config.todo_path @ parse_todo_file config.done_path *)
+  let sel = Select.of_string_exn ~fmt_date filter in
+  let entries = match source with
+    | `Todo -> parse_todo_file config.todo_path
+    | `Done -> parse_todo_file config.done_path
+    | `All  -> 
+      parse_todo_file config.todo_path @ parse_todo_file config.done_path
     in
     Entry.index entries
     |> Select.filter_indexed sel
@@ -232,6 +235,27 @@ let td_ls config source order layout filter =
     |> layout_entries config layout
     |> print_endline
 
+
+let wrap f = try f () with
+  | Sys_error err 
+  | ConfigError err
+  | ArgumentError err -> prerr_endline ("< error: " ^ err ^ " >")
+  | error -> raise error
+
+let td_add config entry_str =
+  wrap (fun () -> _td_add config entry_str)
+
+let td_do config verbose noprompt filter =
+  wrap (fun () -> _td_do config verbose noprompt filter)
+
+let td_undo config verbose noprompt filter =
+  wrap (fun () -> _td_undo config verbose noprompt filter)
+
+let td_rm config verbose noprompt source filter =
+  wrap (fun () -> _td_rm config verbose noprompt source filter)
+
+let td_ls config source order layout filter =
+  wrap (fun () -> _td_ls config source order layout filter)
 
 (* command line parsing *)
 open Cmdliner
@@ -329,11 +353,11 @@ let rm_cmd =
     Arg.(value & flag & info ["n"; "noprompt"] ~doc)
   in
   let source_t =
-    let doc   = "Remove entries from the todo.txt file (default)." in
+    let doc   = "Remove entries from the todo.tood file (default)." in
     let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "Remove entries from the done.txt file." in
+    let doc   = "Remove entries from the done.tood file." in
     let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    let doc   = "Remove entries from both the todo.txt and done.txt files." in
+    let doc   = "Remove entries from both the todo.tood and done.tood files." in
     let all'  = `All, Arg.info ["a"; "all"] ~doc in
     Arg.(value & vflag `Todo [todo'; done'; all'])
   in
@@ -350,7 +374,7 @@ let rm_cmd =
 
 
 let ls_cmd =
-  let doc = "pretty print entries" in
+  let doc = "list entries" in
   let man = [
     `S Manpage.s_description;
     `P "List selected entries from the todo.tood or done.tood files with custom
@@ -361,11 +385,11 @@ let ls_cmd =
     |> Term.(app (const (String.concat ~sep:" ")))
   in
   let source_t =
-    let doc   = "List entries from the todo.txt file (default)." in
+    let doc   = "List entries from the todo.tood file (default)." in
     let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "List entries from the done.txt file." in
+    let doc   = "List entries from the done.tood file." in
     let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    let doc   = "List entries from both the todo.txt and done.txt files." in
+    let doc   = "List entries from both the todo.tood and done.tood files." in
     let all'  = `All, Arg.info ["a"; "all"] ~doc in
     Arg.(value & vflag `Todo [todo'; done'; all'])
   in
@@ -392,7 +416,8 @@ let default_cmd =
   let doc = "simple command line tool to manage todo lists" in
   let sdocs = Manpage.s_common_options in
   let exits = Term.default_exits in
-  Term.(ret (const (fun _ -> `Help (`Pager, None)) $ config_t)),
+  let default_ls config = td_ls config `Todo `None `Flat "<true>" in
+  Term.(const default_ls $ config_t),
   Term.info "td" ~version:_version ~doc ~sdocs ~exits
 
 let commands = [add_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd]

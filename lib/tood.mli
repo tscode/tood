@@ -1,11 +1,7 @@
 
 type 'a res = ('a, string) Result.t
 
-exception ParseError    of string
-exception ArgumentError of string
-
-
-module type S = sig
+module Symbol : sig
   type t
 
   val to_string     : t -> string
@@ -13,14 +9,8 @@ module type S = sig
   val of_string_exn : string -> t
 end
 
-
-module Symbol : S
-
-
 module Date : sig
   type t
-
-  val to_string : t -> string
 
   val create     : day : int -> month : int -> year : int -> t res
   val create_exn : day : int -> month : int -> year : int -> t
@@ -30,6 +20,8 @@ module Date : sig
   val year  : t -> int
 
   val is_valid : day : int -> month : int -> year : int -> bool
+
+  val to_string : t -> string
 
   (* Date formatting *)
 
@@ -72,7 +64,7 @@ end
 
 
 module Entry : sig
-  include S
+  type t
 
   type priority =
     | High
@@ -89,6 +81,8 @@ module Entry : sig
   val project_tags : t -> Symbol.t list list
   val due_tags     : t -> Date.t list
 
+  (* Indexed entries *)
+
   val index      : t list -> (int * t) list
   val index_with : int list -> t list -> (int * t) list res
 
@@ -97,6 +91,12 @@ module Entry : sig
 
   val deindex : (int * t) list -> t list
   val indices : (int * t) list -> int list
+
+  (* Strict printing and parsing that does not tolerate deviations *)
+
+  val to_string     : t -> string
+  val of_string     : string -> t res
+  val of_string_exn : string -> t
 
   (* Less strict parsing with custom date formats *)
 
@@ -112,16 +112,18 @@ module Entry : sig
 
   val fmt_to_string : fmt -> string
 
-  val format : fmt       : fmt      ->
-               ?fmt_date : Date.fmt ->
-               ?strip    : bool     ->
-               ?tag_sep  : string   -> t -> string
+  val format :
+    fmt       : fmt      ->
+    ?fmt_date : Date.fmt ->
+    ?strip    : bool     ->
+    ?tag_sep  : string   -> t -> string
 
-  val format_index : fmt        : fmt      -> 
-                     ?fmt_date  : Date.fmt -> 
-                     ?max_index : int      -> 
-                     ?strip     : bool     -> 
-                     ?tag_sep   : string   -> int * t -> string
+  val format_index :
+    fmt        : fmt      -> 
+    ?fmt_date  : Date.fmt -> 
+    ?max_index : int      -> 
+    ?strip     : bool     -> 
+    ?tag_sep   : string   -> int * t -> string
 end
 
 module Select : sig
@@ -153,9 +155,14 @@ module Select : sig
   val split   : t -> Entry.t list -> Entry.t list * Entry.t list
 
   val filter_indexed : t -> (int * Entry.t) list -> (int * Entry.t) list
-  val split_indexed  : t -> (int * Entry.t) list 
-                         -> (int * Entry.t) list * (int * Entry.t) list
+  val split_indexed  :
+    t -> (int * Entry.t) list -> (int * Entry.t) list * (int * Entry.t) list
 end
 
 module Parser = Parser
+
+(* Exceptions *)
+
+exception ParseError    of string
+exception ArgumentError of string
 

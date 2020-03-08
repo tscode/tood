@@ -19,8 +19,6 @@ type t =
   | True
   | False
 
-
-
 let and' a b  = And (a, b) 
 let or'  a b  = Or (a, b)
 let not' a    = Not a
@@ -192,9 +190,10 @@ module P = struct
 
   let of_string ?(fmt_date=Date.default_fmt) str =
     match snd fmt_date with
-    | Some date_parser -> parse_string (only (parser date_parser)) str
-    | None             ->
-      Error ("date format '" ^ fst fmt_date ^ "' is invalid for parsing")
+    | None -> Error ("date format '" ^ fst fmt_date ^ "' is invalid for parsing")
+    | Some date_parser -> match parse_string (only (parser date_parser)) str with
+      | Ok sel -> Ok sel
+      | Error _ -> Error ("cannot parse selector '" ^ str ^ "'")
 
 end
 
