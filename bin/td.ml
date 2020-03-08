@@ -253,6 +253,13 @@ let _td_ls config source order layout filter =
     |> print_endline
 
 
+let _td_sync config = 
+  match config.sync_cmd with
+  | None     -> print_endline "< no sync command configured >"
+  | Some cmd -> match Unix.system cmd with
+    | Ok ()   -> print_endline "< synchronization successful >"
+    | Error _ -> raise (ConfigError "sync command exited unsuccessfully")
+
 let wrap f = try f () with
   | Sys_error err 
   | ConfigError err
@@ -273,6 +280,8 @@ let td_rm config verbose noprompt source filter =
 
 let td_ls config source order layout filter =
   wrap (fun () -> _td_ls config source order layout filter)
+
+let td_sync config = wrap (fun () -> _td_sync config)
 
 (* command line parsing *)
 open Cmdliner
@@ -429,6 +438,15 @@ let ls_cmd =
   Term.(const td_ls $ config_t $ source_t $ order_t $ layout_t $ filter_t),
   Term.info "ls" ~doc ~sdocs:Manpage.s_common_options ~man
 
+let sync_cmd =
+  let doc = "sync todo- and done-files" in
+  let man = [
+    `S Manpage.s_description;
+    `P "Executes the option `sync_cmd` from the config file as shell command."
+  ] in
+  Term.(const td_sync $ config_t),
+  Term.info "sync" ~doc ~sdocs:Manpage.s_common_options ~man
+
 let default_cmd =
   let doc = "simple command line tool to manage todo lists" in
   let sdocs = Manpage.s_common_options in
@@ -437,6 +455,6 @@ let default_cmd =
   Term.(const default_ls $ config_t),
   Term.info "td" ~version:_version ~doc ~sdocs ~exits
 
-let commands = [add_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd]
+let commands = [add_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd; sync_cmd]
 let () = Term.(exit @@ eval_choice default_cmd commands)
 
