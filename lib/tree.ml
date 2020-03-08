@@ -34,7 +34,7 @@ let of_leaves ?(name="") ~paths leaves =
     ~f:(fun tree path -> add_leaf ~path tree leaf)
     (paths leaf)
   in
-  List.fold ~init:(create name) ~f leaves
+  List.fold ~init:(create name) ~f (List.rev leaves)
 
 let rec to_leaves t = t.leaves @ List.concat_map ~f:to_leaves t.nodes
 

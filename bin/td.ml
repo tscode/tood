@@ -62,7 +62,7 @@ let parse_config_file path = let open Tood.Parser in
   with
    Sys_error _ -> 
      print_endline (
-       "< info: file '" 
+       "< file '" 
        ^ path
        ^ "' cannot be accessed, using fallback config options >"
      );
@@ -79,7 +79,7 @@ let parse_todo_file ?(fail=false) path =
   | Sys_error err as error -> begin match fail with
     | true  -> raise error
     | false -> print_endline
-      ("< info: file '" ^ path ^ "' cannot be accessed >");
+      ("< file '" ^ path ^ "' cannot be accessed >");
       []
   end
   | error -> raise error
@@ -116,13 +116,30 @@ let layout_entries config layout indexed_entries =
       let fmt_date = Date.fmt config.date_fmt in
       let f = layout_entry ~fmt ~fmt_date ~max_index in
       List.map ~f indexed_entries |> String.concat ~sep:"\n"
-    | `Tree -> raise (Failure "tree layout not yet implemented")
+    | `Tree ->
+      let fmt = Entry.fmt config.entry_fmt_tree in
+      let fmt_date = Date.fmt config.date_fmt in
+      let paths (_, entry) = match Entry.project_tags entry with
+        | []       -> [[]]
+        | projects -> projects
+      in
+      let tree = Tree.of_leaves ~paths indexed_entries in
+      let fname path name = 
+        let offset = Int.max 0 (List.length path - 1) in 
+        String.make offset ' ' ^ Symbol.to_string name ^ "/"
+      in
+      let f path entry =
+        let offset = Int.max 0 (List.length path - 1) in
+        layout_entry ~offset ~fmt ~fmt_date ~max_index entry
+      in
+      Tree.collect ~fname ~f tree |> List.tl_exn |> String.concat ~sep:"\n"
+
 
 let sort_entries sort indexed_entries = match sort with
   | `None -> indexed_entries
 
 let prompt_confirmation msg default =
-  let msg = msg ^ (if default then " [Y/n] " else " [N/y] ") in
+  let msg = msg ^ (if default then " Proceed? [Y/n] " else " Proceed? [N/y] ") in
   print_endline msg;
   let rec read_answer () = begin
     match In_channel.(input_line stdin) |> Option.map ~f:String.lowercase with
@@ -154,14 +171,14 @@ let move config verbose noprompt sel msg from_path to_path =
   | [] -> print_endline "< no entries selected >"
   | entries ->
     if verbose then begin
-      print_endline "selected entries:"; 
+      print_endline "Selected entries:"; 
       selected |> layout_entries config `Flat |> print_endline;
     end;
     let proceed =
       match noprompt || List.length selected <= 1 with
       | true  -> true
       | false ->
-        let l = List.length entries |> Int.to_string in
+        let l = List.length selected |> Int.to_string in
         prompt_confirmation 
           (msg l)
           true
@@ -181,7 +198,7 @@ let _td_do config verbose noprompt filter =
   | Error err -> prerr_endline err
   | Ok sel -> 
     let msg l = 
-      "You are about to mark " ^ l ^ " entries as done. Proceed?"
+      "You are about to mark " ^ l ^ " entries as done."
     in
     move 
       config verbose noprompt sel msg
@@ -193,7 +210,7 @@ let _td_undo config verbose noprompt filter =
   | Error err -> prerr_endline err
   | Ok sel -> 
     let msg l =
-      "You are about to mark " ^ l ^ " done entries as undone. Proceed?"
+      "You are about to mark " ^ l ^ " already done entries as undone."
     in
     move
       config verbose noprompt sel msg
@@ -207,12 +224,12 @@ let _td_rm config verbose noprompt source filter =
     let msg, path = match source with
     | `Todo -> 
       let msg l =
-        "You are about to delete " ^ l ^ " undone entries. Proceed?"
+        "You are about to delete " ^ l ^ " undone entries."
       in
       msg, config.todo_path
     | `Done ->
       let msg l =
-        "You are about to delete " ^ l ^ " done entries. Proceed?"
+        "You are about to delete " ^ l ^ " done entries."
       in
       msg, config.done_path
     | `All ->
@@ -239,7 +256,7 @@ let _td_ls config source order layout filter =
 let wrap f = try f () with
   | Sys_error err 
   | ConfigError err
-  | ArgumentError err -> prerr_endline ("< error: " ^ err ^ " >")
+  | ArgumentError err -> prerr_endline ("error: " ^ err)
   | error -> raise error
 
 let td_add config entry_str =

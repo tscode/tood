@@ -115,14 +115,14 @@ module Entry : sig
   val format :
     fmt       : fmt      ->
     ?fmt_date : Date.fmt ->
-    ?strip    : bool     ->
+    ?rstrip   : bool     ->
     ?tag_sep  : string   -> t -> string
 
   val format_index :
     fmt        : fmt      -> 
     ?fmt_date  : Date.fmt -> 
     ?max_index : int      -> 
-    ?strip     : bool     -> 
+    ?rstrip    : bool     -> 
     ?tag_sep   : string   -> int * t -> string
 end
 

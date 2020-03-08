@@ -92,7 +92,7 @@ module P = struct
    * All of this is probably much faster and nicer with an Angstrom parser
    *)
 
-  let format ~fmt ?(fmt_date=Date.default_fmt) ?(strip=true) ?(tag_sep=" ") entry =
+  let format ~fmt ?(fmt_date=Date.default_fmt) ?(rstrip=true) ?(tag_sep=" ") entry =
     let prepend_tag = (^) (String.of_char Tag.P.tagmarker) in
     let collect = String.concat ~sep:tag_sep in
     let ctags   = context_tags entry in
@@ -109,7 +109,7 @@ module P = struct
     |> sub ~sep (p', List.map ~f:prepend_tag ptags |> collect)
     |> sub ~sep (c', List.map ~f:prepend_tag ctags |> collect)
     |> sub ~sep (d', List.map ~f:prepend_tag dtags |> collect)
-    in if strip then String.strip output else output
+    in if rstrip then String.rstrip output else output
 
 
   (* Should also work but will probably be much slower? 
@@ -126,7 +126,7 @@ module P = struct
   let number_of_chars i = Int.to_string i |> String.length
 
   let format_index ~fmt ?fmt_date ?max_index 
-                   ?(strip=true) ?(tag_sep=" ") (index, entry) =
+                   ?(rstrip=true) ?(tag_sep=" ") (index, entry) =
     let index_str = Int.to_string index in
     let max_index = Option.value ~default:index max_index in
     let padding =
@@ -135,11 +135,11 @@ module P = struct
     in
     let sep = tag_sep in
     let open Sub in
-    let output = format ~fmt ?fmt_date ~tag_sep ~strip:false entry
+    let output = format ~fmt ?fmt_date ~tag_sep ~rstrip:false entry
     |> sub ~sep (i,  index_str)
     |> sub ~sep (i', index_str ^ padding)
     |> sub ~sep (j', padding ^ index_str)
-    in if strip then String.strip output else output
+    in if rstrip then String.rstrip output else output
 
 
   (* Reading *)
@@ -201,42 +201,4 @@ let of_string_relaxed_exn ?fmt_date str =
   match of_string_relaxed ?fmt_date str with
     | Ok entry  -> entry
     | Error err -> raise (ArgumentError err)
-
-
-let compare_projects = List.compare String.compare
-
-let project_list entries =
-  let pair entry tag = (tag, entry) in
-  entries
-  |> List.concat_map ~f:(fun ientry ->
-    List.map ~f:(pair ientry) (project_tags (snd ientry))) 
-  |> List.sort ~compare:(Comparable.lift compare_projects ~f:fst)
-
-let rec project_level p p' = match (p, p') with
-  | h :: t, h' :: t' -> begin match String.(h = h') with
-    | true  -> 1 + (project_level t t')
-    | false -> 0
-  end
-  | _ -> 0
-
-let rec format_header level = 
-  let f l h = (String.make l ' ') ^ "/" ^ h ^ ":\n" in function
-  | h :: [] -> f level h
-  | h :: t  -> f level h ^ format_header (level + 1) t
-  | []      -> ""
-
-let format_project_list format_entry pl =
-  let f (previous, str) (p, ientry) =
-    let indent = List.length p in
-    let level = project_level previous p in
-    match Int.(indent = level) with
-    | true  -> (p, str ^ format_entry indent ientry) 
-    | false -> 
-      let header = List.sub ~pos:level ~len:(indent - level) p
-        |> format_header level
-      in
-      (p, str ^ header ^ (format_entry indent ientry))
-    in
-    List.fold ~init:([], "") ~f pl
-
 
