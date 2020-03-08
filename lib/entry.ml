@@ -202,3 +202,41 @@ let of_string_relaxed_exn ?fmt_date str =
     | Ok entry  -> entry
     | Error err -> raise (ArgumentError err)
 
+
+let compare_projects = List.compare String.compare
+
+let project_list entries =
+  let pair entry tag = (tag, entry) in
+  entries
+  |> List.concat_map ~f:(fun ientry ->
+    List.map ~f:(pair ientry) (project_tags (snd ientry))) 
+  |> List.sort ~compare:(Comparable.lift compare_projects ~f:fst)
+
+let rec project_level p p' = match (p, p') with
+  | h :: t, h' :: t' -> begin match String.(h = h') with
+    | true  -> 1 + (project_level t t')
+    | false -> 0
+  end
+  | _ -> 0
+
+let rec format_header level = 
+  let f l h = (String.make l ' ') ^ "/" ^ h ^ ":\n" in function
+  | h :: [] -> f level h
+  | h :: t  -> f level h ^ format_header (level + 1) t
+  | []      -> ""
+
+let format_project_list format_entry pl =
+  let f (previous, str) (p, ientry) =
+    let indent = List.length p in
+    let level = project_level previous p in
+    match Int.(indent = level) with
+    | true  -> (p, str ^ format_entry indent ientry) 
+    | false -> 
+      let header = List.sub ~pos:level ~len:(indent - level) p
+        |> format_header level
+      in
+      (p, str ^ header ^ (format_entry indent ientry))
+    in
+    List.fold ~init:([], "") ~f pl
+
+

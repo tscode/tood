@@ -159,7 +159,36 @@ module Select : sig
     t -> (int * Entry.t) list -> (int * Entry.t) list * (int * Entry.t) list
 end
 
+module Tree : sig
+
+  type 'a t
+  type path = Symbol.t list
+
+  val name   : 'a t -> Symbol.t
+  val leaves : 'a t -> 'a list
+  val nodes  : 'a t -> 'a t list
+
+  val create : ?leaves : 'a list -> ?nodes : 'a t list -> Symbol.t -> 'a t
+
+  val has_name : Symbol.t -> 'a t -> bool
+
+  val add_leaf  : ?path : path -> 'a t -> 'a -> 'a t
+  val of_leaves : ?name : Symbol.t -> paths : ('a -> path list) -> 'a list -> 'a t
+  val to_leaves : 'a t -> 'a list
+
+  val map : f : ('a -> 'b) -> 'a t -> 'b t
+
+  val collect :
+    ?path  : path                     ->
+    ?fname : (path -> Symbol.t -> 'b) ->
+    f      : (path -> 'a -> 'b)       -> 'a t -> 'b list
+
+end
+
+
 module Parser = Parser
+
+
 
 (* Exceptions *)
 
