@@ -260,6 +260,11 @@ let _td_sync config =
     | Ok ()   -> print_endline "< synchronization successful >"
     | Error _ -> raise (ConfigError "sync command exited unsuccessfully")
 
+let _td_touch config =
+  let f file = () in
+  Out_channel.with_file (resolve_path config.todo_path) ~append:true ~f;
+  Out_channel.with_file (resolve_path config.done_path) ~append:true ~f
+
 let wrap f = try f () with
   | Sys_error err 
   | ConfigError err
@@ -281,7 +286,8 @@ let td_rm config verbose noprompt source filter =
 let td_ls config source order layout filter =
   wrap (fun () -> _td_ls config source order layout filter)
 
-let td_sync config = wrap (fun () -> _td_sync config)
+let td_sync config  = wrap (fun () -> _td_sync config)
+let td_touch config = wrap (fun () -> _td_touch config)
 
 (* command line parsing *)
 open Cmdliner
@@ -439,13 +445,24 @@ let ls_cmd =
   Term.info "ls" ~doc ~sdocs:Manpage.s_common_options ~man
 
 let sync_cmd =
-  let doc = "sync todo- and done-files" in
+  let doc = "synchronize todo and done files" in
   let man = [
     `S Manpage.s_description;
     `P "Executes the option `sync_cmd` from the config file as shell command."
   ] in
   Term.(const td_sync $ config_t),
   Term.info "sync" ~doc ~sdocs:Manpage.s_common_options ~man
+
+let touch_cmd =
+  let doc = "initialize todo and done files" in
+  let man = [
+    `S Manpage.s_description;
+    `P "Touches the todo and done files specified in the configuration.
+    This is a convenience command that makes sure that both the todo.tood
+    and done.tood files exist."
+  ] in
+  Term.(const td_touch $ config_t),
+  Term.info "touch" ~doc ~sdocs:Manpage.s_common_options ~man
 
 let default_cmd =
   let doc = "simple command line tool to manage todo lists" in
@@ -455,6 +472,6 @@ let default_cmd =
   Term.(const default_ls $ config_t),
   Term.info "td" ~version:_version ~doc ~sdocs ~exits
 
-let commands = [add_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd; sync_cmd]
+let commands = [add_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd; sync_cmd; touch_cmd]
 let () = Term.(exit @@ eval_choice default_cmd commands)
 
