@@ -157,7 +157,7 @@ module P = struct
   let boolean =
     string "<true>" *> return True <|> string "<false>" *> return False
 
-  let fuzzy = symbol >>| fun sym ->
+  let wildcard = symbol >>| fun sym ->
     let p = pat sym in
       or' (Text p) (or' (Context p)  (Subproject p))
 
@@ -165,7 +165,6 @@ module P = struct
   let fixpoint date_parser p =
     let and' = ws *> and_mark *> ws *> return and' in
     let or'  = ws *> or_mark *> ws *> return or' in
-    let not' = lift not' (not_mark *> ws *> p) in
     let par  = char '(' *> ws *> p <* ws <* char ')' in
     let factor = choice [
         due_range date_parser
@@ -174,16 +173,16 @@ module P = struct
       ; index
       ; text
       ; prio
-      ; fuzzy
+      ; wildcard
       ; project
       ; subproject
       ; context 
       ; boolean
-      ; not'
       ; par
     ]
     in
-    chainl1 (chainl1 factor and') or'
+    let not' = lift not' (not_mark *> ws *> factor) in
+    chainl1 (chainl1 (not' <|> factor) and') or'
 
   let parser date_parser =
     fix (fixpoint date_parser) <|> ws *> return True
