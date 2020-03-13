@@ -4,7 +4,8 @@ exception ConfigError of string
 
 let _version = "v0.0"
 
-(* Config type and config file handling *)
+
+(* Config type and config option handling *)
 
 type config = {
     todo_path      : string
@@ -38,6 +39,20 @@ let add_config_option config (key, value) = match key with
   | "entry_fmt_tree" -> { config with entry_fmt_tree = value }
   | _ -> raise (ConfigError ("invalid key: " ^ key))
 
+
+(* Logging *)
+
+let log_info_str str = "< " ^ str ^ " >"
+let log_warn_str str = "warning: " ^ str ^ "."
+let log_err_str  str = "error: " ^ str ^ "."
+
+let log_info str = log_info_str str |> print_endline
+let log_warn str = log_warn_str str |> print_endline
+let log_err str  = log_err_str str  |> prerr_endline
+
+
+(* File operations *)
+
 let resolve_path path =
   match Sys.getenv "HOME" with
   | None -> path
@@ -61,15 +76,9 @@ let parse_config_file path = let open Tood.Parser in
     |> List.fold ~init:default_config ~f:add_config_option
   with
    Sys_error _ -> 
-     print_endline (
-       "< file '" 
-       ^ path
-       ^ "' cannot be accessed, using fallback config options >"
-     );
+     log_info
+       ("file '" ^ path ^ "' cannot be accessed, using fallback config options");
      default_config
-
-
-(* High level todo file operations *)
 
 let parse_todo_file ?(fail=false) path =
   try
@@ -78,13 +87,13 @@ let parse_todo_file ?(fail=false) path =
   with
   | Sys_error err as error -> begin match fail with
     | true  -> raise error
-    | false -> print_endline
-      ("< file '" ^ path ^ "' cannot be accessed >");
+    | false -> log_info
+      ("file '" ^ path ^ "' cannot be accessed");
       []
   end
   | error -> raise error
 
-let write_todo_file entries path =
+let write_todo_file path entries =
   List.map ~f:Entry.to_string entries
   |> Out_channel.write_lines (resolve_path path)
 
@@ -94,7 +103,6 @@ let append_todo_file entries path =
   in
   let f oc = Out_channel.output_string oc (str ^ "\n") in
   Out_channel.with_file (resolve_path path) ~append:true ~f
-
 
 (* Formatting entry lists for printing purposes *)
 
@@ -108,7 +116,7 @@ let layout_entry ?(style=None) ?(offset=0) ~fmt ~fmt_date ~max_index entry =
 
 let layout_entries config layout indexed_entries =
   match Entry.max_index indexed_entries with
-  | None -> "< no entries to print >"
+  | None -> log_info_str "no entries to print"
   | Some max_index ->
     match layout with
     | `Flat ->
@@ -168,7 +176,7 @@ let move config verbose noprompt sel msg from_path to_path =
     Select.split_indexed sel entries
   in
   match entries with
-  | [] -> print_endline "< no entries selected >"
+  | [] -> log_info "no entries selected"
   | entries ->
     if verbose then begin
       print_endline "Selected entries:"; 
@@ -184,58 +192,100 @@ let move config verbose noprompt sel msg from_path to_path =
           true
     in
     match proceed with
-    | false -> print_endline "< aborted >"
+    | false -> log_info "aborted"
     | true  ->
-      write_todo_file (Entry.deindex unselected) from_path;
+      write_todo_file from_path (Entry.deindex unselected);
       match to_path with
       | None -> ()
       | Some to_path ->
         append_todo_file (Entry.deindex selected) to_path
 
+let modify path msg noprompt sel mods =
+  let entries = parse_todo_file path |> Entry.index in
+  match Select.filter_indexed sel entries with
+  | []       -> log_info "no entries selected"
+  | selected ->
+    let proceed =
+      match List.length selected, List.exists ~f:Mod.is_text mods with
+      | 1, _ -> true
+      | l, false -> prompt_confirmation (msg l) true
+      | l, true  ->
+          log_warn ("replacing text of " ^ Int.to_string l ^ " entries at once");
+          prompt_confirmation (msg l) true
+  in
+  match proceed with
+  | false -> log_info "aborted"
+  | true  -> 
+    entries
+    |> Select.map_indexed sel ~f:(Mod.apply_list mods)
+    |> Entry.deindex
+    |> write_todo_file path
+
+let _td_mod config noprompt source filter_mod_str =
+  let fmt_date  = Date.fmt config.date_fmt in
+  let sel, mods =
+    match List.map ~f:String.strip (String.split ~on:':' filter_mod_str) with
+    | filter_str :: mod_str :: [] ->
+        let sel = Select.of_string_exn ~fmt_date filter_str in
+        let mods = Mod.list_of_string_exn ~fmt_date mod_str in
+        sel, mods
+    | _ ->
+      let msg = 
+        "wrong mod syntax: '" ^ filter_mod_str ^
+        "' (should be 'filter : mod1 mod2 ...')"
+      in
+      raise (ArgumentError msg)
+  in
+  let path, msg = match source with
+  | `Todo -> 
+    config.todo_path,
+    fun l -> ("You are about to modify " ^ Int.to_string l ^ " entries.")
+  | `Done ->
+    config.done_path,
+    fun l -> ("You are about to modify " ^ Int.to_string l ^ " done entries.")
+  | `All ->
+    raise (Failure "flag --all not implemented yet - wait for version 0.2!")
+  in
+  modify path msg noprompt sel mods
+
 let _td_do config verbose noprompt filter =
   let fmt_date = get_fmt_date config in
-  match Select.of_string ~fmt_date filter with
-  | Error err -> prerr_endline err
-  | Ok sel -> 
-    let msg l = 
-      "You are about to mark " ^ l ^ " entries as done."
-    in
-    move 
-      config verbose noprompt sel msg
-      config.todo_path (Some config.done_path)
+  let sel = Select.of_string_exn ~fmt_date filter in
+  let msg l = 
+    "You are about to mark " ^ l ^ " entries as done."
+  in
+  move 
+    config verbose noprompt sel msg
+    config.todo_path (Some config.done_path)
 
 let _td_undo config verbose noprompt filter =
   let fmt_date = get_fmt_date config in
-  match Select.of_string ~fmt_date filter with
-  | Error err -> prerr_endline err
-  | Ok sel -> 
-    let msg l =
-      "You are about to mark " ^ l ^ " already done entries as undone."
-    in
-    move
-      config verbose noprompt sel msg
-      config.done_path (Some config.todo_path)
+  let sel = Select.of_string_exn ~fmt_date filter in
+  let msg l =
+    "You are about to mark " ^ l ^ " done entries as undone."
+  in
+  move
+    config verbose noprompt sel msg
+    config.done_path (Some config.todo_path)
 
 let _td_rm config verbose noprompt source filter =
   let fmt_date = get_fmt_date config in
-  match Select.of_string ~fmt_date filter with
-  | Error err -> prerr_endline err
-  | Ok sel -> 
-    let msg, path = match source with
-    | `Todo -> 
-      let msg l =
-        "You are about to delete " ^ l ^ " undone entries."
-      in
-      msg, config.todo_path
-    | `Done ->
-      let msg l =
-        "You are about to delete " ^ l ^ " done entries."
-      in
-      msg, config.done_path
-    | `All ->
-      raise (Failure "NOT IMPLEMENTED YET")
+  let sel = Select.of_string_exn ~fmt_date filter in
+  let msg, path = match source with
+  | `Todo -> 
+    let msg l =
+      "You are about to delete " ^ l ^ " entries."
     in
-    move config verbose noprompt sel msg path None
+    msg, config.todo_path
+  | `Done ->
+    let msg l =
+      "You are about to delete " ^ l ^ " done entries."
+    in
+    msg, config.done_path
+  | `All ->
+    raise (Failure "Flag --all not implemented yet. Wait for version 0.2!")
+  in
+  move config verbose noprompt sel msg path None
 
 let _td_ls config source order layout filter =
   let fmt_date = get_fmt_date config in
@@ -255,9 +305,9 @@ let _td_ls config source order layout filter =
 
 let _td_sync config = 
   match config.sync_cmd with
-  | None     -> print_endline "< no sync command configured >"
+  | None     -> log_info "no sync command configured"
   | Some cmd -> match Unix.system cmd with
-    | Ok ()   -> print_endline "< synchronization successful >"
+    | Ok ()   -> log_info "synchronization successfull"
     | Error _ -> raise (ConfigError "sync command exited unsuccessfully")
 
 let _td_touch config =
@@ -268,7 +318,7 @@ let _td_touch config =
 let wrap f = try f () with
   | Sys_error err 
   | ConfigError err
-  | ArgumentError err -> prerr_endline ("error: " ^ err)
+  | ArgumentError err -> log_err err
   | error -> raise error
 
 let td_add config entry_str =
@@ -289,6 +339,9 @@ let td_ls config source order layout filter =
 let td_sync config  = wrap (fun () -> _td_sync config)
 let td_touch config = wrap (fun () -> _td_touch config)
 
+let td_mod config noprompt source filter_mod_str = 
+  wrap (fun () -> _td_mod config noprompt source filter_mod_str)
+
 (* command line parsing *)
 open Cmdliner
 
@@ -305,7 +358,7 @@ let add_cmd =
   let man = [
     `S Manpage.s_description;
     `P "Parses the provided command line arguments as tood entry and adds it to
-    the todo.tood file specified in the configuration."
+    the todo-file specified in the configuration."
   ] in
   let entry_t =
     Arg.(non_empty & pos_all string [] & info [] ~docv:"TODO")
@@ -313,6 +366,37 @@ let add_cmd =
   in
   Term.(const td_add $ config_t $ entry_t),
   Term.info "add" ~doc ~sdocs:Manpage.s_common_options ~man
+
+
+let mod_cmd =
+  let source_t =
+    let doc   = "Modify entries in todo-file (default)." in
+    let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
+    let doc   = "Modify entries in `done_file`." in
+    let done' = `Done, Arg.info ["d"; "done"] ~doc in
+    let doc   = "Modify entries in both todo-file and done-file." in
+    let all'  = `All, Arg.info ["a"; "all"] ~doc in
+    Arg.(value & vflag `Todo [todo'; done'; all'])
+  in
+  let doc =
+    "Suppress asking for confirmation when more than 1 entry is selected."
+  in
+  let noprompt_t =
+    Arg.(value & flag & info ["n"; "noprompt"] ~doc)
+  in
+  let filter_mod_t =
+    Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER : MODS")
+    |> Term.(app (const (String.concat ~sep:" ")))
+  in
+  let doc = "modify entries" in
+  let man = [
+    `S Manpage.s_description;
+    `P "Modifies an entry or a selection of entries. It is possible to modify
+    the priority or the text of an entry, as well as to add or remove tags."
+  ] in
+  Term.(const td_mod $ config_t $ noprompt_t $ source_t $ filter_mod_t),
+  Term.info "mod" ~doc ~sdocs:Manpage.s_common_options ~man
+
 
 let do_cmd =
   let doc = "Filter expression used to select entries." in
@@ -334,7 +418,7 @@ let do_cmd =
   let man = [
     `S Manpage.s_description;
     `P "Parses the positional command line arguments as filter and moves the
-    selected entries from the todo.tood to the done.tood file specified in the
+    selected entries from the todo-file to the done-file file specified in the
     configuration. Prompts for confirmation if more than one entry is selected
     (see -n, --noprompt)."
   ] in
@@ -361,7 +445,7 @@ let undo_cmd =
   let man = [
     `S Manpage.s_description;
     `P "Parses the positional command line arguments as filter and moves the
-    selected entries from the done.tood to the todo.tood file specified in the
+    selected entries from the done-file to the todo-file specified in the
     configuration. Prompts for confirmation if more than one entry is selected
     (see -n, --noprompt)."
   ] in
@@ -385,11 +469,11 @@ let rm_cmd =
     Arg.(value & flag & info ["n"; "noprompt"] ~doc)
   in
   let source_t =
-    let doc   = "Remove entries from the todo.tood file (default)." in
+    let doc   = "Remove entries from the todo-file (default)." in
     let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "Remove entries from the done.tood file." in
+    let doc   = "Remove entries from the done-file file." in
     let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    let doc   = "Remove entries from both the todo.tood and done.tood files." in
+    let doc   = "Remove entries from both the todo-file and done-file files." in
     let all'  = `All, Arg.info ["a"; "all"] ~doc in
     Arg.(value & vflag `Todo [todo'; done'; all'])
   in
@@ -397,7 +481,7 @@ let rm_cmd =
   let man = [
     `S Manpage.s_description;
     `P "Parses the positional command line arguments as filter and removes the
-    selected entries from the todo.tood or done.tood files specified in the
+    selected entries from the todo-file or done-file files specified in the
     configuration. Prompts for confirmation if more than one entry is selected
     (see -n, --noprompt)."
   ] in
@@ -409,7 +493,7 @@ let ls_cmd =
   let doc = "list entries" in
   let man = [
     `S Manpage.s_description;
-    `P "List selected entries from the todo.tood or done.tood files with custom
+    `P "List selected entries from the todo-file or done-file files with custom
     formatting and style."
   ] in
   let filter_t =
@@ -417,11 +501,11 @@ let ls_cmd =
     |> Term.(app (const (String.concat ~sep:" ")))
   in
   let source_t =
-    let doc   = "List entries from the todo.tood file (default)." in
+    let doc   = "List entries from the todo-file file (default)." in
     let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "List entries from the done.tood file." in
+    let doc   = "List entries from the done-file file." in
     let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    let doc   = "List entries from both the todo.tood and done.tood files." in
+    let doc   = "List entries from both the todo-file and done-file files." in
     let all'  = `All, Arg.info ["a"; "all"] ~doc in
     Arg.(value & vflag `Todo [todo'; done'; all'])
   in
@@ -458,8 +542,8 @@ let touch_cmd =
   let man = [
     `S Manpage.s_description;
     `P "Touches the todo and done files specified in the configuration.
-    This is a convenience command that makes sure that both the todo.tood
-    and done.tood files exist."
+    This is a convenience command that makes sure that both the todo-file
+    and done-file exist."
   ] in
   Term.(const td_touch $ config_t),
   Term.info "touch" ~doc ~sdocs:Manpage.s_common_options ~man
@@ -472,6 +556,6 @@ let default_cmd =
   Term.(const default_ls $ config_t),
   Term.info "td" ~version:_version ~doc ~sdocs ~exits
 
-let commands = [add_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd; sync_cmd; touch_cmd]
+let commands = [add_cmd; mod_cmd; ls_cmd; do_cmd; undo_cmd; rm_cmd; sync_cmd]
 let () = Term.(exit @@ eval_choice default_cmd commands)
 

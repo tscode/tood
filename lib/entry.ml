@@ -17,7 +17,7 @@ let prio_of_int = function
   | _ -> raise ImpossibleError
 
 type t = {
-    text : symbol
+    text : string
   ; tags : Tag.t list
   ; prio : priority
 }

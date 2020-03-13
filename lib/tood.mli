@@ -153,10 +153,15 @@ module Select : sig
   val matches : t -> ?index : int -> Entry.t -> bool
   val filter  : t -> Entry.t list -> Entry.t list
   val split   : t -> Entry.t list -> Entry.t list * Entry.t list
+  val map     : t -> f : (Entry.t -> Entry.t) -> Entry.t list -> Entry.t list
 
   val filter_indexed : t -> (int * Entry.t) list -> (int * Entry.t) list
+
   val split_indexed  :
     t -> (int * Entry.t) list -> (int * Entry.t) list * (int * Entry.t) list
+
+  val map_indexed :
+    t -> f : (Entry.t -> Entry.t) -> (int * Entry.t) list -> (int * Entry.t) list
 end
 
 module Tree : sig
@@ -182,6 +187,35 @@ module Tree : sig
     ?path  : path                     ->
     ?fname : (path -> Symbol.t -> 'b) ->
     f      : (path -> 'a -> 'b)       -> 'a t -> 'b list
+
+end
+
+module Mod : sig
+
+  type t
+
+  val text : string -> t
+  val prio : Entry.priority -> t
+
+  val add_tag : Tag.t -> t
+  val del_tag : Tag.t -> t
+
+  val is_text : t -> bool
+  val is_prio : t -> bool
+  val is_add_tag : t -> bool
+  val is_del_tag : t -> bool
+
+  val apply      : t -> Entry.t -> Entry.t
+  val apply_list : t list -> Entry.t -> Entry.t
+
+  val to_string : t -> string
+  val of_string : ?fmt_date : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+
+  val list_of_string : ?fmt_date : Date.fmt -> string -> t list res
+  val list_of_string_exn : ?fmt_date : Date.fmt -> string -> t list
+
+
 
 end
 

@@ -51,3 +51,7 @@ let chainl1 expr op =
 let take_till_unescaped = take_till
 
 let take_all = take_till (function _ -> false)
+
+let quoted_string =
+  let str = take_till_unescaped (function '\'' | '"' -> true | _ -> false) in
+  (char '\'' <|> char '"') *> str

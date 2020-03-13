@@ -78,6 +78,13 @@ let rec matches sel ?(index=0) entry = match sel with
 
 let filter sel l = List.filteri ~f:(fun i x -> matches sel ~index:(i+1) x) l
 let split sel l = (filter sel l, filter (not' sel) l)
+let map sel ~f l =
+  let f entry = match matches sel entry with
+    | false -> entry
+    | true  -> f entry
+  in
+  List.map ~f l
+
 
 let filter_indexed sel l = 
   let f (index, entry) = match matches sel ~index entry with
@@ -87,6 +94,13 @@ let filter_indexed sel l =
   List.filter_map ~f l
 
 let split_indexed sel l = (filter_indexed sel l, filter_indexed (not' sel) l)
+
+let map_indexed sel ~f l =
+  let f (index, entry) = match matches sel ~index entry with
+    | false -> (index, entry)
+    | true  -> (index, f entry)
+  in
+  List.map ~f l
 
 module P = struct
   open Parser
@@ -126,9 +140,7 @@ module P = struct
   let tagmarker = char Tag.P.tagmarker
   let opt_tagmarker = opt (char Tag.P.tagmarker) 
 
-  let text =
-    let str = take_till (function '\'' | '"' -> true | _ -> false) in
-    lift text (quote_mark *> str <* quote_mark)
+  let text = lift text quoted_string
 
   let due_range date_parser =
     let date = opt_tagmarker *> date_parser <|> Date.P.parser in
