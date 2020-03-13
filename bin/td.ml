@@ -170,7 +170,7 @@ let _td_add config entry_str =
   let entry = Entry.of_string_relaxed_exn ~fmt_date entry_str in
   append_todo_file [entry] config.todo_path
 
-let move config verbose noprompt sel msg from_path to_path =
+let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
   let entries = Entry.index (parse_todo_file from_path) in
   let selected, unselected =
     Select.split_indexed sel entries
@@ -198,6 +198,7 @@ let move config verbose noprompt sel msg from_path to_path =
       match to_path with
       | None -> ()
       | Some to_path ->
+        let selected = List.map ~f:(fun (i,x) -> (i, f x)) selected in
         append_todo_file (Entry.deindex selected) to_path
 
 let modify path msg noprompt sel mods =
@@ -248,13 +249,17 @@ let _td_mod config noprompt source filter_mod_str =
   in
   modify path msg noprompt sel mods
 
-let _td_do config verbose noprompt filter =
+let _td_do config verbose noprompt failed filter =
   let fmt_date = get_fmt_date config in
   let sel = Select.of_string_exn ~fmt_date filter in
   let msg l = 
     "You are about to mark " ^ l ^ " entries as done."
   in
-  move 
+  let f = match failed with
+    | true  -> Mod.(apply (of_string_exn "+failed"))
+    | false -> fun entry -> entry
+  in
+  move ~f
     config verbose noprompt sel msg
     config.todo_path (Some config.done_path)
 
@@ -324,8 +329,8 @@ let wrap f = try f () with
 let td_add config entry_str =
   wrap (fun () -> _td_add config entry_str)
 
-let td_do config verbose noprompt filter =
-  wrap (fun () -> _td_do config verbose noprompt filter)
+let td_do config verbose noprompt failed filter =
+  wrap (fun () -> _td_do config verbose noprompt failed filter)
 
 let td_undo config verbose noprompt filter =
   wrap (fun () -> _td_undo config verbose noprompt filter)
@@ -414,6 +419,12 @@ let do_cmd =
   let noprompt_t =
     Arg.(value & flag & info ["n"; "noprompt"] ~doc)
   in
+  let doc =
+    "Add the tag +failed when moving the selected entries."
+  in
+  let failed_t =
+    Arg.(value & flag & info ["f"; "failed"] ~doc)
+  in
   let doc = "mark entries as done" in
   let man = [
     `S Manpage.s_description;
@@ -422,7 +433,7 @@ let do_cmd =
     configuration. Prompts for confirmation if more than one entry is selected
     (see -n, --noprompt)."
   ] in
-  Term.(const td_do $ config_t $ verbose_t $ noprompt_t $ filter_t),
+  Term.(const td_do $ config_t $ verbose_t $ noprompt_t $ failed_t $ filter_t),
   Term.info "do" ~doc ~sdocs:Manpage.s_common_options ~man
 
 let undo_cmd =
