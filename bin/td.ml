@@ -163,6 +163,12 @@ let get_fmt_date config = match config.date_fmt_parse with
   | Some str -> Date.fmt str
 
 
+let list_entries_if_verbose config verbose selected = match verbose with
+  | false -> ()
+  | true  ->
+    print_endline "Selected entries:"; 
+    selected |> layout_entries config `Flat |> print_endline
+
 (* td commands *)
 
 let _td_add config entry_str =
@@ -175,21 +181,16 @@ let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
   let selected, unselected =
     Select.split_indexed sel entries
   in
-  match entries with
+  match selected with
   | [] -> log_info "no entries selected"
-  | entries ->
-    if verbose then begin
-      print_endline "Selected entries:"; 
-      selected |> layout_entries config `Flat |> print_endline;
-    end;
+  | _  ->
+    let () = list_entries_if_verbose config verbose selected in
     let proceed =
       match noprompt || List.length selected <= 1 with
       | true  -> true
       | false ->
         let l = List.length selected |> Int.to_string in
-        prompt_confirmation 
-          (msg l)
-          true
+        prompt_confirmation (msg l) true
     in
     match proceed with
     | false -> log_info "aborted"
@@ -201,18 +202,19 @@ let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
         let selected = List.map ~f:(fun (i,x) -> (i, f x)) selected in
         append_todo_file (Entry.deindex selected) to_path
 
-let modify path msg noprompt sel mods =
+let modify config verbose noprompt sel msg path mods =
   let entries = parse_todo_file path |> Entry.index in
   match Select.filter_indexed sel entries with
   | []       -> log_info "no entries selected"
   | selected ->
+    let () = list_entries_if_verbose config verbose selected in
     let proceed =
       match List.length selected, List.exists ~f:Mod.is_text mods with
       | 1, _ -> true
-      | l, false -> prompt_confirmation (msg l) true
+      | l, false -> if noprompt then true else prompt_confirmation (msg l) true
       | l, true  ->
           log_warn ("replacing text of " ^ Int.to_string l ^ " entries at once");
-          prompt_confirmation (msg l) true
+          if noprompt then true else prompt_confirmation (msg l) true
   in
   match proceed with
   | false -> log_info "aborted"
@@ -222,32 +224,27 @@ let modify path msg noprompt sel mods =
     |> Entry.deindex
     |> write_todo_file path
 
-let _td_mod config noprompt source filter_mod_str =
+let _td_mod config noprompt verbose source str =
   let fmt_date  = Date.fmt config.date_fmt in
   let sel, mods =
-    match List.map ~f:String.strip (String.split ~on:':' filter_mod_str) with
+    match List.map ~f:String.strip (String.split ~on:':' str) with
     | filter_str :: mod_str :: [] ->
         let sel = Select.of_string_exn ~fmt_date filter_str in
         let mods = Mod.list_of_string_exn ~fmt_date mod_str in
         sel, mods
     | _ ->
       let msg = 
-        "wrong mod syntax: '" ^ filter_mod_str ^
-        "' (should be 'filter : mod1 mod2 ...')"
+        "wrong mod syntax: '" ^ str ^ "' (should be 'filter : mod1 mod2 ...')"
       in
       raise (ArgumentError msg)
   in
-  let path, msg = match source with
-  | `Todo -> 
-    config.todo_path,
-    fun l -> ("You are about to modify " ^ Int.to_string l ^ " entries.")
-  | `Done ->
-    config.done_path,
-    fun l -> ("You are about to modify " ^ Int.to_string l ^ " done entries.")
-  | `All ->
-    raise (Failure "flag --all not implemented yet - wait for version 0.2!")
+  let path, msg_frac = match source with
+  | `Todo -> config.todo_path, " entries."
+  | `Done -> config.done_path, " done entries."
+  | `All -> raise (Failure "flag --all not implemented yet - wait for version 0.2!")
   in
-  modify path msg noprompt sel mods
+  let msg l = ("You are about to modify " ^ Int.to_string l ^ msg_frac) in
+  modify config verbose noprompt sel msg path mods
 
 let _td_do config verbose noprompt failed filter =
   let fmt_date = get_fmt_date config in
@@ -344,8 +341,8 @@ let td_ls config source order layout filter =
 let td_sync config  = wrap (fun () -> _td_sync config)
 let td_touch config = wrap (fun () -> _td_touch config)
 
-let td_mod config noprompt source filter_mod_str = 
-  wrap (fun () -> _td_mod config noprompt source filter_mod_str)
+let td_mod config noprompt verbose source filter_mod_str = 
+  wrap (fun () -> _td_mod config noprompt verbose source filter_mod_str)
 
 (* command line parsing *)
 open Cmdliner
@@ -374,6 +371,10 @@ let add_cmd =
 
 
 let mod_cmd =
+  let doc = "List selected entries before prompting." in
+  let verbose_t =
+    Arg.(value & flag & info ["v"; "verbose"] ~doc)
+  in
   let source_t =
     let doc   = "Modify entries in todo-file (default)." in
     let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
@@ -399,7 +400,7 @@ let mod_cmd =
     `P "Modifies an entry or a selection of entries. It is possible to modify
     the priority or the text of an entry, as well as to add or remove tags."
   ] in
-  Term.(const td_mod $ config_t $ noprompt_t $ source_t $ filter_mod_t),
+  Term.(const td_mod $ config_t $ noprompt_t $ verbose_t $ source_t $ filter_mod_t),
   Term.info "mod" ~doc ~sdocs:Manpage.s_common_options ~man
 
 
@@ -409,12 +410,12 @@ let do_cmd =
     Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER")
     |> Term.(app (const (String.concat ~sep:" ")))
   in
-  let doc = "List selected entries." in
+  let doc = "List selected entries before prompting." in
   let verbose_t =
     Arg.(value & flag & info ["v"; "verbose"] ~doc)
   in
   let doc = 
-    "Suppress asking for confirmation when more than 1 entry is selected."
+    "Suppress confirmation prompt if more than 1 entry is selected."
   in
   let noprompt_t =
     Arg.(value & flag & info ["n"; "noprompt"] ~doc)
@@ -430,8 +431,8 @@ let do_cmd =
     `S Manpage.s_description;
     `P "Parses the positional command line arguments as filter and moves the
     selected entries from the todo-file to the done-file file specified in the
-    configuration. Prompts for confirmation if more than one entry is selected
-    (see -n, --noprompt)."
+    configuration. A confirmation prompt is displayed if more than one entry is
+    selected (see -n, --noprompt)."
   ] in
   Term.(const td_do $ config_t $ verbose_t $ noprompt_t $ failed_t $ filter_t),
   Term.info "do" ~doc ~sdocs:Manpage.s_common_options ~man
@@ -457,8 +458,8 @@ let undo_cmd =
     `S Manpage.s_description;
     `P "Parses the positional command line arguments as filter and moves the
     selected entries from the done-file to the todo-file specified in the
-    configuration. Prompts for confirmation if more than one entry is selected
-    (see -n, --noprompt)."
+    configuration. A confirmation prompt is displayed if more than one entry is
+    selected (see -n, --noprompt)."
   ] in
   Term.(const td_undo $ config_t $ verbose_t $ noprompt_t $ filter_t),
   Term.info "undo" ~doc ~sdocs:Manpage.s_common_options ~man
@@ -493,8 +494,8 @@ let rm_cmd =
     `S Manpage.s_description;
     `P "Parses the positional command line arguments as filter and removes the
     selected entries from the todo-file or done-file files specified in the
-    configuration. Prompts for confirmation if more than one entry is selected
-    (see -n, --noprompt)."
+    configuration. A confirmation prompt is displayed if more than one entry is
+    selected (see -n, --noprompt)."
   ] in
   Term.(const td_rm $ config_t $ verbose_t $ noprompt_t $ source_t $ filter_t),
   Term.info "rm" ~doc ~sdocs:Manpage.s_common_options ~man
