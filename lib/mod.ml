@@ -16,14 +16,16 @@ let is_prio    = function Prio _ -> true | _ -> false
 let is_add_tag = function Add _ -> true | _ -> false
 let is_del_tag = function Del _ -> true | _ -> false
 
-
 let apply m entry = let open Entry in match m with
   | Text text -> { entry with text }
   | Prio prio -> { entry with prio }
-  | Add tag   -> { entry with tags = tag :: entry.tags }
   | Del tag   -> 
     let tags = List.filter ~f:Tag.((~=) tag) (tags entry) in
     { entry with tags }
+  | Add tag   -> 
+    match List.exists ~f:Tag.((=) tag) entry.tags with
+    | true  -> entry
+    | false -> { entry with tags = tag :: entry.tags }
 
 let apply_list ms entry = List.fold_right ~f:apply ~init:entry ms
 

@@ -24,7 +24,10 @@ type t = {
 
 type fmt = string
 
-let create ?(tags=[]) ?(prio=Default) text = {text; tags; prio}
+let create ?(tags=[]) ?(prio=Default) text =
+  let tags = Tag.(List.dedup ~compare tags) in
+  {text; tags; prio}
+
 
 let text entry = entry.text
 let tags entry = entry.tags
@@ -154,13 +157,13 @@ module P = struct
   let text = take_till (fun c -> Char.(c = Tag.P.tagmarker)) >>| String.strip
 
   let parser =
-    let f prio text tags = {text; tags; prio} in
+    let f prio text tags = create ~tags ~prio text in
     Parser.(lift3 f (prio <* ws) text (many (ws *> Tag.P.parser Date.P.parser)))
 
   let parser_relaxed = function
     | (fmt, None) -> Error ("date format " ^ fmt ^ " is invalid for parsing")
     | (_, Some date_parser) ->
-      let f prio text tags = {text; tags; prio} in
+      let f prio text tags = create ~tags ~prio text in
       let tag_parser  = Tag.P.parser (Date.P.parser <|> date_parser) in
       let tags_parser = many (ws *> tag_parser) in
       Ok Parser.(lift3 f (option Default (prio <* ws)) text tags_parser)
