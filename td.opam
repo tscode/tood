@@ -1,0 +1,26 @@
+opam-version: "2.0"
+maintainer: "Thomas Staudt <tscode@posteo.net>"
+authors: [ "Thomas Staudt <tscode@posteo.net>" ]
+license: "GPL3"
+homepage: "https://github.com/tscode/tood"
+bug-reports: "https://github.com/tscode/tood/issues"
+dev-repo: "git+https://github.com/tscode/tood.git"
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+depends: [
+  "ocaml" {>= "4.04.0"}
+  "dune" {>= "1.0"}
+  "tood"
+  "core"
+  "angstrom"
+]
+synopsis: "Cmd application for simple but functional todo list management."
+description: """
+Td is a command line application that offers todo list management on the
+terminal. It is build on top of the Tood ocaml library (explicitly written to
+power td) and derives most of its functionality from it. Td is configurable
+via an configuration file and supports functionality to create, modify, 
+and delete todo list entries in the Tood format.
+"""
+

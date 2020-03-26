@@ -1,6 +1,7 @@
 open Tood
 
 exception ConfigError of string
+exception NotImplemented of string
 
 let _version = "v0.0"
 
@@ -235,7 +236,7 @@ let _td_mod config noprompt verbose source str =
   let path, msg_frac = match source with
     | `Todo -> config.todo_path, " entries."
     | `Done -> config.done_path, " done entries."
-    | `All -> raise (Failure "flag --all not implemented yet - wait for version 0.2!")
+    | `All -> raise (NotImplemented "flag --all not implemented yet - wait for version 0.2")
   in
   let msg l = ("You are about to modify " ^ Int.to_string l ^ msg_frac) in
   modify config verbose noprompt sel msg path mods
@@ -279,7 +280,7 @@ let _td_rm config verbose noprompt source filter =
     in
     msg, config.done_path
   | `All ->
-    raise (Failure "Flag --all not implemented yet. Wait for version 0.2!")
+    raise (NotImplemented "Flag --all not implemented yet. Wait for version 0.2")
   in
   move config verbose noprompt sel msg path None
 
@@ -314,7 +315,8 @@ let _td_touch config =
 let wrap f = try f () with
   | Sys_error err 
   | ConfigError err
-  | ArgumentError err -> log_err err
+  | ArgumentError err 
+  | NotImplemented err -> log_err err
   | error -> raise error
 
 let td_add config entry_str =
@@ -372,26 +374,30 @@ let mod_cmd =
   let source_t =
     let doc   = "Modify entries in todo-file (default)." in
     let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "Modify entries in `done_file`." in
+    let doc   = "Modify entries in done-file." in
     let done' = `Done, Arg.info ["d"; "done"] ~doc in
     let doc   = "Modify entries in both todo-file and done-file." in
     let all'  = `All, Arg.info ["a"; "all"] ~doc in
     Arg.(value & vflag `Todo [todo'; done'; all'])
   in
   let doc =
-    "Suppress asking for confirmation when more than 1 entry is selected."
+    "Suppress asking for confirmation when more than one entry is selected."
   in
   let noprompt_t =
     Arg.(value & flag & info ["n"; "noprompt"] ~doc)
   in
+  let doc =
+    "Filter to select the entries to be modified and (space separated) list of
+    modifications."
+  in
   let filter_mod_t =
-    Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MOD1 MOD2")
+    Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MODS")
     |> Term.(app (const (String.concat ~sep:" ")))
   in
   let doc = "modify entries" in
   let man = [
     `S Manpage.s_description;
-    `P "Modifies an entry or a selection of entries. It is possible to modify
+    `P "Modify an entry or a selection of entries. It is possible to modify
     the priority or the text of an entry, as well as to add or remove tags."
   ] in
   Term.(const td_mod $ config_t $ noprompt_t $ verbose_t $ source_t $ filter_mod_t),
