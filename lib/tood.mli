@@ -121,7 +121,7 @@ module Entry : sig
 
 end
 
-module Select : sig
+module Filter : sig
 
   type t
 
@@ -238,7 +238,7 @@ module Parser : sig
   val date   : ?fmt_date : Date.fmt -> unit -> Date.t t
   val tag    : ?fmt_date : Date.fmt -> unit -> Tag.t t
   val entry  : ?fmt_date : Date.fmt -> unit -> Entry.t t
-  val sel    : ?fmt_date : Date.fmt -> unit -> Select.t t
+  val filter : ?fmt_date : Date.fmt -> unit -> Filter.t t
   val mods   : ?fmt_date : Date.fmt -> unit -> Mod.t list t
 
   val entry_strict : Entry.t t 

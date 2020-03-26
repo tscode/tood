@@ -8,6 +8,6 @@ let tag  = Tag.P.parser ~marker:Tag.P.tagmarker
 let entry = Entry.P.parser
 let entry_strict = Entry.P.parser_strict
 
-let sel  = Select.P.parser
-let mods = Mod.P.parser_list
+let filter = Filter.P.parser
+let mods   = Mod.P.parser_list
 

@@ -173,7 +173,7 @@ let _td_add config entry_str =
 let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
   let entries = Entry.index (parse_todo_file from_path) in
   let selected, unselected =
-    Select.split_indexed sel entries
+    Filter.split_indexed sel entries
   in
   match selected with
   | [] -> log_info "no entries selected"
@@ -198,7 +198,7 @@ let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
 
 let modify config verbose noprompt sel msg path mods =
   let entries = parse_todo_file path |> Entry.index in
-  match Select.filter_indexed sel entries with
+  match Filter.filter_indexed sel entries with
   | []       -> log_info "no entries modified"
   | selected ->
     let () = list_entries_if_verbose config verbose selected in
@@ -209,19 +209,19 @@ let modify config verbose noprompt sel msg path mods =
       | l, true  ->
           log_warn ("replacing text of " ^ Int.to_string l ^ " entries at once");
           if noprompt then true else prompt_confirmation (msg l) true
-  in
-  match proceed with
-  | false -> log_info "aborted"
-  | true  -> 
-    entries
-    |> Select.map_indexed sel ~f:(Mod.apply_list mods)
-    |> Entry.deindex
-    |> write_todo_file path
+    in
+    match proceed with
+    | false -> log_info "aborted"
+    | true  -> 
+      entries
+      |> Filter.map_indexed sel ~f:(Mod.apply_list mods)
+      |> Entry.deindex
+      |> write_todo_file path
 
 let parse_mod_args fmt_date str =
   let open Angstrom in
   let open Parser in
-  let p = lift2 Tuple2.create (sel ~fmt_date () <* ws) (mods ~fmt_date ()) in
+  let p = lift2 Tuple2.create (filter ~fmt_date () <* ws) (mods ~fmt_date ()) in
   match parse_string p str with
   | Ok t    -> t
   | Error _ ->
@@ -242,7 +242,7 @@ let _td_mod config noprompt verbose source str =
 
 let _td_do config verbose noprompt failed filter =
   let fmt_date = config.date_fmt in
-  let sel = Select.of_string_exn ~fmt_date filter in
+  let sel = Filter.of_string_exn ~fmt_date filter in
   let msg l = 
     "You are about to mark " ^ l ^ " entries as done."
   in
@@ -256,7 +256,7 @@ let _td_do config verbose noprompt failed filter =
 
 let _td_undo config verbose noprompt filter =
   let fmt_date = config.date_fmt in
-  let sel = Select.of_string_exn ~fmt_date filter in
+  let sel = Filter.of_string_exn ~fmt_date filter in
   let msg l =
     "You are about to mark " ^ l ^ " done entries as undone."
   in
@@ -266,7 +266,7 @@ let _td_undo config verbose noprompt filter =
 
 let _td_rm config verbose noprompt source filter =
   let fmt_date = config.date_fmt in
-  let sel = Select.of_string_exn ~fmt_date filter in
+  let sel = Filter.of_string_exn ~fmt_date filter in
   let msg, path = match source with
   | `Todo -> 
     let msg l =
@@ -285,7 +285,7 @@ let _td_rm config verbose noprompt source filter =
 
 let _td_ls config source order layout filter =
   let fmt_date = config.date_fmt in
-  let sel = Select.of_string_exn ~fmt_date filter in
+  let sel = Filter.of_string_exn ~fmt_date filter in
   let entries = match source with
     | `Todo -> parse_todo_file config.todo_path
     | `Done -> parse_todo_file config.done_path
@@ -293,7 +293,7 @@ let _td_ls config source order layout filter =
       parse_todo_file config.todo_path @ parse_todo_file config.done_path
     in
     Entry.index entries
-    |> Select.filter_indexed sel
+    |> Filter.filter_indexed sel
     |> sort_entries order
     |> layout_entries config layout
     |> print_endline
