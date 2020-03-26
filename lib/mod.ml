@@ -31,41 +31,35 @@ let apply_list ms entry = List.fold_right ~f:apply ~init:entry ms
 
 
 module P = struct
-  open Parser
+  open Parser_base
 
-  let text = quoted_string >>| text
+  let text = quoted >>| text
   let prio = Entry.P.prio >>| prio
-  let add date_parser = Tag.P.parser date_parser >>| add_tag
-  let del date_parser = Tag.P.parser ~marker:'~' date_parser >>| del_tag
+  let add fmt_date = Tag.P.parser ~fmt_date ()             >>| add_tag
+  let del fmt_date = Tag.P.parser ~fmt_date ~marker:'~' () >>| del_tag
 
-  let parser date_parser =
-    choice [ text; prio; add date_parser; del date_parser ] 
+  let parser ?(fmt_date=Date.default_fmt) () =
+    choice [ text; prio; add fmt_date; del fmt_date ] 
 
-  let of_string ?(fmt_date=Date.default_fmt) str =
-    let f _ date_parser = 
-      match parse_string (only (parser date_parser)) str with
-      | Ok str  -> Ok str
-      | Error _ -> Error ("cannot parse modifier '" ^ str ^ "'")
-    in
-    Date.with_fmt ~fmt:fmt_date ~f
+  let of_string ?fmt_date str =
+    match parse_string (only (parser ?fmt_date ())) str with
+    | Ok str  -> Ok str
+    | Error _ -> Error ("cannot parse modifier '" ^ str ^ "'")
 
-  let list_parser date_parser = many1 ((parser date_parser) <* ws)
+  let parser_list ?fmt_date () = many1 ((parser ?fmt_date ()) <* ws)
 
-  let list_of_string ?(fmt_date=Date.default_fmt) str =
-    let f _ date_parser =
-      match parse_string (only (list_parser date_parser)) str with
-      | Ok str  -> Ok str
-      | Error _ -> Error ("cannot parse modifier '" ^ str ^ "'")
-    in
-    Date.with_fmt ~fmt:fmt_date ~f
+  let list_of_string ?fmt_date str =
+    match parse_string (only (parser_list ?fmt_date ())) str with
+    | Ok str  -> Ok str
+    | Error _ -> Error ("cannot parse modifier '" ^ str ^ "'")
 
 end
 
-let to_string = function
+let to_string ?fmt_date = function
   | Text str  -> "\"" ^ str ^ "\""
   | Prio prio -> Entry.P.prio_to_string prio
-  | Add tag   -> Tag.to_string tag
-  | Del tag   -> Tag.P.to_string ~marker:'~' tag
+  | Add tag   -> Tag.to_string ?fmt_date tag
+  | Del tag   -> Tag.P.to_string ?fmt_date ~marker:'~' tag
 
 
 let of_string = P.of_string

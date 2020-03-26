@@ -26,7 +26,7 @@ let (~=) a b = not (a = b)
 (* Module for parsing / reading related functions *)
 
 module P = struct
-  open Parser
+  open Parser_base
 
   (* Syntax *)
 
@@ -40,11 +40,11 @@ module P = struct
     | [p] -> p ^ String.of_char project_sep
     | ts  -> String.concat ~sep:(String.of_char project_sep) ts
 
-  let to_string ?(marker=tagmarker) = 
+  let to_string ?fmt_date ?(marker=tagmarker) = 
     let m = String.of_char tagmarker in function
       | Context t  -> m ^ t
       | Project ts -> m ^ project_to_string ts
-      | Due date   -> m ^ Date.to_string date
+      | Due date   -> m ^ Date.to_string ?fmt:fmt_date date
 
   (* Reading *)
 
@@ -56,19 +56,19 @@ module P = struct
       (symbol <* char project_sep)
       (sep_by (char project_sep) symbol)
 
-  let parser ?(marker=tagmarker) date_parser =
+  let parser ?fmt_date ?(marker=tagmarker) () =
+    let date_parser = Date.P.parser ?fmt_date () in
         (char marker *> project_tag >>| project)
     <|> (char marker *> context_tag >>| context)
     <|> (char marker *> date_parser >>| due)
 
-  let of_string ?(fmt_date=Date.default_fmt) str =
-    let f _ date_parser = parse_string (only (parser date_parser)) str in
-    Date.with_fmt ~fmt:fmt_date ~f
+  let of_string ?fmt_date ?marker str =
+    parse_string (only (parser ?fmt_date ?marker ())) str
 
 end
 
 let to_string = P.to_string ~marker:P.tagmarker
-let of_string = P.of_string
+let of_string = P.of_string ~marker:P.tagmarker
 
 let of_string_exn ?fmt_date str = match of_string ?fmt_date str with
   | Ok tag -> tag

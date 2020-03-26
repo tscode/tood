@@ -11,33 +11,30 @@ type config = {
     todo_path      : string
   ; done_path      : string
   ; sync_cmd       : string option
-  ; date_fmt       : string
-  ; date_fmt_parse : string option
   ; entry_fmt_flat : string
   ; entry_fmt_tree : string
+  ; date_fmt       : Date.fmt
 }
 
 let default_config = {
     todo_path      = "./todo.tood"
   ; done_path      = "./done.tood"
   ; sync_cmd       = None
-  ; date_fmt       = "%y-%m-%y"
-  ; date_fmt_parse = None
   ; entry_fmt_flat = "%J %r %t %P_%C_%D"
   ; entry_fmt_tree = "%J %r %t %C_%D"
+  ; date_fmt       = Date.fmt_exn "%y-%m-%d"
 }
 
 let default_config_path = "~/.config/td/conf"
 
-let add_config_option config (key, value) = match key with
+let add_config_option config (key, value) = match Symbol.to_string key with
   | "todo_path"      -> { config with todo_path = value }
   | "done_path"      -> { config with done_path = value }
-  | "sync_cmd"       -> { config with sync_cmd = Some value }
-  | "date_fmt"       -> { config with date_fmt  = value }
-  | "date_fmt_parse" -> { config with date_fmt_parse = Some value }
+  | "sync_cmd"       -> { config with sync_cmd  = Some value }
+  | "date_fmt"       -> { config with date_fmt  = Date.fmt_exn value }
   | "entry_fmt_flat" -> { config with entry_fmt_flat = value }
   | "entry_fmt_tree" -> { config with entry_fmt_tree = value }
-  | _ -> raise (ConfigError ("invalid key: " ^ key))
+  | _ -> raise (ConfigError ("invalid key: " ^ Symbol.to_string key))
 
 
 (* Logging *)
@@ -61,7 +58,9 @@ let resolve_path path =
     | false -> path
     | true  -> String.substr_replace_first path ~pattern:"~" ~with_:home_dir
 
-let parse_config_file path = let open Tood.Parser in
+let parse_config_file path =
+  let open Angstrom in
+  let open Parser in
   let path   = resolve_path path in
   let key    = symbol <* ws <* char ':' in
   let value  = take_all >>| String.strip in
@@ -112,7 +111,7 @@ let is_done ~done_index (index, entry) =
   | _, value -> value
 
 let layout_entry ?(style=None) ?(offset=0) ~fmt ~fmt_date ~max_index entry =
-  (String.make offset ' ') ^ (Entry.format_index ~fmt ~fmt_date ~max_index entry)
+  (String.make offset ' ') ^ (Entry.format_index ~fmt_date ~max_index fmt entry)
 
 let layout_entries config layout indexed_entries =
   match Entry.max_index indexed_entries with
@@ -120,13 +119,13 @@ let layout_entries config layout indexed_entries =
   | Some max_index ->
     match layout with
     | `Flat ->
-      let fmt = Entry.fmt config.entry_fmt_flat in
-      let fmt_date = Date.fmt config.date_fmt in
+      let fmt = config.entry_fmt_flat in
+      let fmt_date = config.date_fmt in
       let f = layout_entry ~fmt ~fmt_date ~max_index in
       List.map ~f indexed_entries |> String.concat ~sep:"\n"
     | `Tree ->
-      let fmt = Entry.fmt config.entry_fmt_tree in
-      let fmt_date = Date.fmt config.date_fmt in
+      let fmt = config.entry_fmt_tree in
+      let fmt_date = config.date_fmt in
       let paths (_, entry) = match Entry.project_tags entry with
         | []       -> [[]]
         | projects -> projects
@@ -158,11 +157,6 @@ let prompt_confirmation msg default =
   end
   in read_answer ()
 
-let get_fmt_date config = match config.date_fmt_parse with
-  | None     -> Date.fmt config.date_fmt
-  | Some str -> Date.fmt str
-
-
 let list_entries_if_verbose config verbose selected = match verbose with
   | false -> ()
   | true  ->
@@ -172,8 +166,8 @@ let list_entries_if_verbose config verbose selected = match verbose with
 (* td commands *)
 
 let _td_add config entry_str =
-  let fmt_date = get_fmt_date config in
-  let entry = Entry.of_string_relaxed_exn ~fmt_date entry_str in
+  let fmt_date = config.date_fmt in
+  let entry = Entry.of_string_exn ~fmt_date entry_str in
   append_todo_file [entry] config.todo_path
 
 let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
@@ -205,7 +199,7 @@ let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
 let modify config verbose noprompt sel msg path mods =
   let entries = parse_todo_file path |> Entry.index in
   match Select.filter_indexed sel entries with
-  | []       -> log_info "no entries selected"
+  | []       -> log_info "no entries modified"
   | selected ->
     let () = list_entries_if_verbose config verbose selected in
     let proceed =
@@ -224,30 +218,30 @@ let modify config verbose noprompt sel msg path mods =
     |> Entry.deindex
     |> write_todo_file path
 
+let parse_mod_args fmt_date str =
+  let open Angstrom in
+  let open Parser in
+  let p = lift2 Tuple2.create (sel ~fmt_date () <* ws) (mods ~fmt_date ()) in
+  match parse_string p str with
+  | Ok t    -> t
+  | Error _ ->
+    let msg = 
+      "wrong mod syntax: '" ^ str ^ "' (should be 'filter mod1 [mod2 ...]')"
+    in
+    raise (ArgumentError msg)
+
 let _td_mod config noprompt verbose source str =
-  let fmt_date  = Date.fmt config.date_fmt in
-  let sel, mods =
-    match List.map ~f:String.strip (String.split ~on:':' str) with
-    | filter_str :: mod_str :: [] ->
-        let sel = Select.of_string_exn ~fmt_date filter_str in
-        let mods = Mod.list_of_string_exn ~fmt_date mod_str in
-        sel, mods
-    | _ ->
-      let msg = 
-        "wrong mod syntax: '" ^ str ^ "' (should be 'filter : mod1 mod2 ...')"
-      in
-      raise (ArgumentError msg)
-  in
+  let sel, mods = parse_mod_args config.date_fmt str in
   let path, msg_frac = match source with
-  | `Todo -> config.todo_path, " entries."
-  | `Done -> config.done_path, " done entries."
-  | `All -> raise (Failure "flag --all not implemented yet - wait for version 0.2!")
+    | `Todo -> config.todo_path, " entries."
+    | `Done -> config.done_path, " done entries."
+    | `All -> raise (Failure "flag --all not implemented yet - wait for version 0.2!")
   in
   let msg l = ("You are about to modify " ^ Int.to_string l ^ msg_frac) in
   modify config verbose noprompt sel msg path mods
 
 let _td_do config verbose noprompt failed filter =
-  let fmt_date = get_fmt_date config in
+  let fmt_date = config.date_fmt in
   let sel = Select.of_string_exn ~fmt_date filter in
   let msg l = 
     "You are about to mark " ^ l ^ " entries as done."
@@ -261,7 +255,7 @@ let _td_do config verbose noprompt failed filter =
     config.todo_path (Some config.done_path)
 
 let _td_undo config verbose noprompt filter =
-  let fmt_date = get_fmt_date config in
+  let fmt_date = config.date_fmt in
   let sel = Select.of_string_exn ~fmt_date filter in
   let msg l =
     "You are about to mark " ^ l ^ " done entries as undone."
@@ -271,7 +265,7 @@ let _td_undo config verbose noprompt filter =
     config.done_path (Some config.todo_path)
 
 let _td_rm config verbose noprompt source filter =
-  let fmt_date = get_fmt_date config in
+  let fmt_date = config.date_fmt in
   let sel = Select.of_string_exn ~fmt_date filter in
   let msg, path = match source with
   | `Todo -> 
@@ -290,7 +284,7 @@ let _td_rm config verbose noprompt source filter =
   move config verbose noprompt sel msg path None
 
 let _td_ls config source order layout filter =
-  let fmt_date = get_fmt_date config in
+  let fmt_date = config.date_fmt in
   let sel = Select.of_string_exn ~fmt_date filter in
   let entries = match source with
     | `Todo -> parse_todo_file config.todo_path

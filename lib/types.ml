@@ -7,6 +7,8 @@ type priority =
   | Default
   | Low
 
+type 'a parser = 'a Angstrom.t
+
 exception ImpossibleError
 exception ParseError of string
 exception ArgumentError of string

@@ -1,15 +1,18 @@
 
-type 'a res = ('a, string) Result.t
+type 'a res    = ('a, string) Result.t
 
 module Symbol : sig
+
   type t
 
   val to_string     : t -> string
   val of_string     : string -> t res
   val of_string_exn : string -> t
+
 end
 
 module Date : sig
+
   type t
 
   val create     : day : int -> month : int -> year : int -> t res
@@ -21,49 +24,46 @@ module Date : sig
 
   val is_valid : day : int -> month : int -> year : int -> bool
 
-  val to_string : t -> string
-
-  (* Date formatting *)
+  (* Custom parsable date formats *)
 
   type fmt
 
-  val fmt           : string -> fmt
-  val default_fmt   : fmt
-  val fmt_to_string : fmt -> string
-  val format        : fmt : fmt -> ?strip : bool -> t -> string
+  val fmt     : string -> fmt res
+  val fmt_exn : string -> fmt
 
-  (* Date parsing with custom formating 
-   *
-   * This will only work if the format string contains the placeholders %d, %m,
-   * %y exactly once each, and if the char '%' does not appear otherwise.
-   * Then is_fmt_legible fmt = true.
-   *
-   * *)
+  val default_fmt        : fmt
+  val fmt_to_string      : fmt -> string
+  val default_fmt_string : string
 
-  val is_fmt_legible   : fmt -> bool
-
+  val to_string     : ?fmt : fmt -> t -> string
   val of_string     : ?fmt : fmt -> string -> t res
   val of_string_exn : ?fmt : fmt -> string -> t
+
+  (* String to date conversion with arbitrary format strings *)
+
+  val format : string -> t -> string
+
 end
 
-
 module Tag : sig
+
   type t =
     | Context of Symbol.t
     | Project of Symbol.t list
     | Due     of Date.t
 
-  val to_string     : t -> string
+  val to_string     : ?fmt_date : Date.fmt -> t -> string
   val of_string     : ?fmt_date : Date.fmt -> string -> t res
   val of_string_exn : ?fmt_date : Date.fmt -> string -> t
 
   val context : Symbol.t -> t
   val project : Symbol.t list -> t
   val due     : Date.t -> t
+
 end
 
-
 module Entry : sig
+
   type t
 
   type priority =
@@ -92,41 +92,37 @@ module Entry : sig
   val deindex : (int * t) list -> t list
   val indices : (int * t) list -> int list
 
-  (* Strict printing and parsing that does not tolerate deviations *)
-
-  val to_string     : t -> string
-  val of_string     : string -> t res
-  val of_string_exn : string -> t
-
   (* Less strict parsing with custom date formats *)
 
-  val of_string_relaxed     : ?fmt_date : Date.fmt -> string -> t res
-  val of_string_relaxed_exn : ?fmt_date : Date.fmt -> string -> t
+  val to_string     : ?fmt_date : Date.fmt -> t -> string
+  val of_string     : ?fmt_date : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+
+  (* Strict printing / parsing that does not tolerate deviations from the
+   * 'official' format *)
+
+  val of_string_strict     : string -> t res
+  val of_string_strict_exn : string -> t
 
   (* Entry formatting *)
 
-  type fmt
-
-  val fmt : string -> fmt
-  val default_fmt : fmt
-
-  val fmt_to_string : fmt -> string
+  val default_fmt_string : string
 
   val format :
-    fmt       : fmt      ->
     ?fmt_date : Date.fmt ->
-    ?rstrip   : bool     ->
-    ?tag_sep  : string   -> t -> string
+    ?rstrip   : bool   ->
+    ?tag_sep  : string -> string -> t -> string
 
   val format_index :
-    fmt        : fmt      -> 
     ?fmt_date  : Date.fmt -> 
-    ?max_index : int      -> 
-    ?rstrip    : bool     -> 
-    ?tag_sep   : string   -> int * t -> string
+    ?max_index : int    -> 
+    ?rstrip    : bool   -> 
+    ?tag_sep   : string -> string -> int * t -> string
+
 end
 
 module Select : sig
+
   type t
 
   val of_string     : ?fmt_date : Date.fmt -> string -> t res
@@ -158,10 +154,43 @@ module Select : sig
   val filter_indexed : t -> (int * Entry.t) list -> (int * Entry.t) list
 
   val split_indexed  :
-    t -> (int * Entry.t) list -> (int * Entry.t) list * (int * Entry.t) list
+    t                    -> 
+    (int * Entry.t) list ->
+    (int * Entry.t) list * (int * Entry.t) list
 
   val map_indexed :
-    t -> f : (Entry.t -> Entry.t) -> (int * Entry.t) list -> (int * Entry.t) list
+    t                        ->
+    f : (Entry.t -> Entry.t) ->
+    (int * Entry.t) list     ->
+    (int * Entry.t) list
+
+end
+
+module Mod : sig
+
+  type t
+
+  val text : string -> t
+  val prio : Entry.priority -> t
+
+  val add_tag : Tag.t -> t
+  val del_tag : Tag.t -> t
+
+  val is_text : t -> bool
+  val is_prio : t -> bool
+  val is_add_tag : t -> bool
+  val is_del_tag : t -> bool
+
+  val apply      : t -> Entry.t -> Entry.t
+  val apply_list : t list -> Entry.t -> Entry.t
+
+  val to_string     : ?fmt_date : Date.fmt -> t -> string
+  val of_string     : ?fmt_date : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+
+  val list_of_string     : ?fmt_date : Date.fmt -> string -> t list res
+  val list_of_string_exn : ?fmt_date : Date.fmt -> string -> t list
+
 end
 
 module Tree : sig
@@ -190,39 +219,31 @@ module Tree : sig
 
 end
 
-module Mod : sig
+module Parser : sig
 
-  type t
+  type 'a t = 'a Angstrom.t
 
-  val text : string -> t
-  val prio : Entry.priority -> t
+  val ws   : unit t
+  val eoil : unit t
 
-  val add_tag : Tag.t -> t
-  val del_tag : Tag.t -> t
+  val integer : int t
+  val quoted  : string t
 
-  val is_text : t -> bool
-  val is_prio : t -> bool
-  val is_add_tag : t -> bool
-  val is_del_tag : t -> bool
+  val take_all : string t
+  val take_till_unescaped : (char -> bool) -> string t
+  val only : 'a t -> 'a t
 
-  val apply      : t -> Entry.t -> Entry.t
-  val apply_list : t list -> Entry.t -> Entry.t
+  val symbol : Symbol.t t
 
-  val to_string : t -> string
-  val of_string : ?fmt_date : Date.fmt -> string -> t res
-  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+  val date   : ?fmt_date : Date.fmt -> unit -> Date.t t
+  val tag    : ?fmt_date : Date.fmt -> unit -> Tag.t t
+  val entry  : ?fmt_date : Date.fmt -> unit -> Entry.t t
+  val sel    : ?fmt_date : Date.fmt -> unit -> Select.t t
+  val mods   : ?fmt_date : Date.fmt -> unit -> Mod.t list t
 
-  val list_of_string : ?fmt_date : Date.fmt -> string -> t list res
-  val list_of_string_exn : ?fmt_date : Date.fmt -> string -> t list
-
-
+  val entry_strict : Entry.t t 
 
 end
-
-
-module Parser = Parser
-
-
 
 (* Exceptions *)
 

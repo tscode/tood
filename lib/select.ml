@@ -103,7 +103,7 @@ let map_indexed sel ~f l =
   List.map ~f l
 
 module P = struct
-  open Parser
+  open Parser_base
 
   (* Writing *)
 
@@ -140,10 +140,10 @@ module P = struct
   let tagmarker = char Tag.P.tagmarker
   let opt_tagmarker = opt (char Tag.P.tagmarker) 
 
-  let text = lift text quoted_string
+  let text = lift text quoted
 
-  let due_range date_parser =
-    let date = opt_tagmarker *> date_parser <|> Date.P.parser in
+  let due_range fmt_date =
+    let date = opt_tagmarker *> Date.P.parser ~fmt_date () in
     (lift2 due_range (date <* ws <* range_mark >>| Option.some) (date >>| Option.some))
     <|>
     (lift (due_range None) (range_mark *> ws *> date >>| Option.some))
@@ -158,7 +158,7 @@ module P = struct
     in
     lift2 range (integer <* ws <* range_mark) (ws *> integer)
 
-  let due date_parser = lift due (opt_tagmarker *> date_parser <|> Date.P.parser)
+  let due fmt_date = lift due (opt_tagmarker *> Date.P.parser ~fmt_date ())
   let index = lift idx integer
 
   let context = tagmarker *> Tag.P.(lift context context_tag)
@@ -174,13 +174,13 @@ module P = struct
       or' (Text p) (or' (Context p)  (Subproject p))
 
 
-  let fixpoint date_parser p =
+  let fixpoint fmt_date p =
     let and' = ws *> and_mark *> ws *> return and' in
     let or'  = ws *> or_mark *> ws *> return or' in
     let par  = char '(' *> ws *> p <* ws <* char ')' in
     let factor = choice [
-        due_range date_parser
-      ; due date_parser
+        due_range fmt_date
+      ; due fmt_date
       ; index_range
       ; index
       ; text
@@ -196,15 +196,13 @@ module P = struct
     let not' = lift not' (not_mark *> ws *> factor) in
     chainl1 (chainl1 (not' <|> factor) and') or'
 
-  let parser date_parser =
-    fix (fixpoint date_parser) <|> ws *> return True
+  let parser ?(fmt_date=Date.default_fmt) () =
+    fix (fixpoint fmt_date) <|> ws *> return True
 
-  let of_string ?(fmt_date=Date.default_fmt) str =
-    match snd fmt_date with
-    | None -> Error ("date format '" ^ fst fmt_date ^ "' is invalid for parsing")
-    | Some date_parser -> match parse_string (only (parser date_parser)) str with
-      | Ok sel -> Ok sel
-      | Error _ -> Error ("cannot parse selector '" ^ str ^ "'")
+  let of_string ?fmt_date str =
+    match parse_string (only (parser ?fmt_date ())) str with
+    | Ok sel -> Ok sel
+    | Error _ -> Error ("cannot parse selector '" ^ str ^ "'")
 
 end
 
