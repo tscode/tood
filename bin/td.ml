@@ -385,7 +385,7 @@ let mod_cmd =
     Arg.(value & flag & info ["n"; "noprompt"] ~doc)
   in
   let filter_mod_t =
-    Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER : MODS")
+    Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MOD1 MOD2")
     |> Term.(app (const (String.concat ~sep:" ")))
   in
   let doc = "modify entries" in
