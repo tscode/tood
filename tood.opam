@@ -14,7 +14,7 @@ depends: [
   "base"
   "angstrom"
 ]
-synopsis: "Library for simple but functional todo list management."
+synopsis: "Library for simple but functional todo list management"
 description: """
 Tood is an ocaml library that collects types and functions useful for basic todo
 list management. The list entries that it implements support date-, context-,
@@ -22,5 +22,5 @@ and project-tags, as well as priorities. Tood todo lists can be pretty-printed
 in customizable formats, filtered by general boolean selectors, and modified
 / updated programmatically.
 """
-
-
+name: "tood"
+version: "~dev"

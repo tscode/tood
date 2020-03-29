@@ -15,7 +15,7 @@ depends: [
   "core"
   "angstrom"
 ]
-synopsis: "Cmd application for simple but functional todo list management."
+synopsis: "Cmd application for simple but functional todo list management"
 description: """
 Td is a command line application that offers todo list management on the
 terminal. It is build on top of the Tood ocaml library (explicitly written to
@@ -23,4 +23,5 @@ power td) and derives most of its functionality from it. Td is configurable
 via an configuration file and supports functionality to create, modify, 
 and delete todo list entries in the Tood format.
 """
-
+name: "td"
+version: "~dev"
