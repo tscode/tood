@@ -226,11 +226,14 @@ module Parser : sig
   val ws   : unit t
   val eoil : unit t
 
+  val opt : 'a t -> 'a option t
+
   val integer : int t
   val quoted  : string t
 
   val take_all : string t
   val take_till_unescaped : (char -> bool) -> string t
+  val take_till_unescaped_char : char -> string t
   val only : 'a t -> 'a t
 
   val symbol : Symbol.t t
@@ -242,6 +245,19 @@ module Parser : sig
   val mods   : ?fmt_date : Date.fmt -> unit -> Mod.t list t
 
   val entry_strict : Entry.t t 
+
+end
+
+module Sub : sig
+
+  type t
+
+  val symbol : t -> Symbol.t
+  val info : t -> string
+
+  val date_patterns : t list
+  val entry_patterns : t list
+  val patterns : t list
 
 end
 

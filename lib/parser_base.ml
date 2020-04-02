@@ -49,6 +49,7 @@ let chainl1 expr op =
 (* TODO: take_till that only stops if the char is not escaped *)
 
 let take_till_unescaped = take_till
+let take_till_unescaped_char c = take_till_unescaped (Char.(<>) c)
 
 let take_all = take_till (function _ -> false)
 

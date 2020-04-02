@@ -8,4 +8,5 @@ module Filter = Filter
 module Tree   = Tree
 module Mod    = Mod
 module Parser = Parser
+module Sub    = Sub
 
