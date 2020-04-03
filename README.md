@@ -1,25 +1,29 @@
 # Td and Tood
 
-*Tood* is a simple ocaml library for parsing, manipulating, filtering and
-formatting todo list entries. *Td* is a command line tool that builds on
-*Tood*, and which aims to make it comfortable to manage your todo list on the
-terminal. It maintains two files with human readable todo list entries, one for
-active entries and one for done ones. A typical sequence of `td` interactions
-might look like this:
+**Tood** is a simple ocaml library for parsing, manipulating, filtering and
+formatting todo list entries. **Td** is a command line tool that builds on Tood,
+and which aims to make it comfortable to manage your todo list on the terminal.
+It maintains two files with human readable todo list entries, one for active
+entries and one for done ones. A typical sequence of `td` interactions might
+look like this:
 
-```
-$ # Append a new task with the context tag 'groceries' to the todo list
+```bash
+# Append a new task with the context tag 'groceries' to the todo list
 $ td add have to go shopping +groceries 
-$ # Append an important task with context and project tag
+
+# Append an important task with context and project tag
 $ td add ! email to my chef +work +projectA/subproject
-$ # List the active entries
+
+# List the active entries
 $ td ls
 1 - have to go shopping +groceries
 2 ! email to my chef +work +projectA/subproject
-$ # Selectively list your entries
+
+# Selectively list your entries
 $ td ls +work
 2 ! email to my chef +work +projectA/subproject
-$ # Move a task to the file with done entries
+
+# Move a task to the file with done entries
 $ td do 2
 $ td ls
 1 - have to go shopping +groceries
