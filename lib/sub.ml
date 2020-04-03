@@ -36,7 +36,7 @@ let p  = create "p" "project tags without tagmarks (string list)"
 let p' = create "P" "project tags with tagmarks (string list)"
 let c  = create "c" "context tags without tagmarks (string list)"
 let c' = create "C" "context tags with tagmarks (string list)"
-let d  = create "d" "date tags without tagmarks (string list)"
+let d_ = create "d" "date tags without tagmarks (string list)"
 let d' = create "D" "date tags with tagmarks (string list)"
 
 let maybe_sep sep = function
@@ -53,7 +53,7 @@ let date_patterns = [
 ]
 
 let entry_patterns = [
-  i; i'; j'; r; t; t'; p; p'; c; c'; d; d'
+  i; i'; j'; r; t; t'; p; p'; c; c'; d_; d'
 ]
 
 let patterns = date_patterns @ entry_patterns

@@ -87,9 +87,9 @@ module P = struct
     | Low     -> "?"
 
   (* 
-   * What follows here is probably very inefficient. I should benchmark and
+   * What follows here is probably inefficient. I should benchmark and
    * possibly change it.
-   * All of this is probably much faster and nicer with an Angstrom parser
+   * All of this is probably much faster with an Angstrom parser ?
    *)
 
   let format ?(fmt_date=Date.default_fmt) ?(rstrip=true) ?(tag_sep=" ") fmt_str entry =
@@ -105,7 +105,7 @@ module P = struct
     |> sub ~sep (r, prio_to_string entry.prio)
     |> sub ~sep (p, collect ptags)
     |> sub ~sep (c, collect ctags)
-    |> sub ~sep (d, collect dtags)
+    |> sub ~sep (d_, collect dtags)
     |> sub ~sep (p', List.map ~f:prepend_tag ptags |> collect)
     |> sub ~sep (c', List.map ~f:prepend_tag ctags |> collect)
     |> sub ~sep (d', List.map ~f:prepend_tag dtags |> collect)
