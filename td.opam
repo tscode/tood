@@ -24,4 +24,4 @@ via an configuration file and supports functionality to create, modify,
 and delete todo list entries in the Tood format.
 """
 name: "td"
-version: "~dev"
+version: "0.1"

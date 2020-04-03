@@ -23,4 +23,4 @@ in customizable formats, filtered by general boolean selectors, and modified
 / updated programmatically.
 """
 name: "tood"
-version: "~dev"
+version: "0.1"
