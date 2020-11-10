@@ -1,5 +1,4 @@
 
-open Tood
 open Cmdliner
 
 let main = [
@@ -26,13 +25,25 @@ let main = [
 
 
 let init = 
-  let formats = 
-    let f sub = 
-      let sym = Symbol.to_string (Sub.symbol sub) in
-      [`Noblank; `P ("%" ^ sym ^ " : " ^ Sub.info sub)]
-    in
-    List.concat_map ~f Sub.entry_patterns |> List.tl_exn,
-    List.concat_map ~f Sub.date_patterns  |> List.tl_exn
+  let entry_placeholders =
+    [ `P "$(b,%i) : index of the entry"
+    ; `P "$(b,%I) : index of the entry with right padding"
+    ; `P "$(b,%J) : index of the entry with left padding"
+    ; `P "$(b,%r) : entry priority (?, -, !)"
+    ; `P "$(b,%s) : entry text"
+    ; `P "$(b,%t) : entry tags without tagmarks"
+    ; `P "$(b,%T) : entry tags with tagmarks"
+    ; `P "$(b,%p) : project tags without tagmarks"
+    ; `P "$(b,%P) : project tags with tagmarks"
+    ; `P "$(b,%c) : context tags without tagmarks"
+    ; `P "$(b,%C) : context tags with tagmarks"
+    ; `P "$(b,%d) : date tags without tagmarks"
+    ; `P "$(b,%D) : date tags with tagmarks" ]
+  in
+  let date_placeholders =
+    [ `P "$(b,%y) : year"
+    ; `P "$(b,%m) : month in the current year"
+    ; `P "$(b,%d) : day in the current month" ]
   in
   let description = [
   `S Manpage.s_description;
@@ -40,7 +51,7 @@ let init =
   already exist at the config path) and touches the specified todo and done
   files in order to make sure that they can be accessed. The configuration
   path is '~/config/td/config' by default, but can be overwritten by the
-  environment variable TD_CONFIG or by providing the command line argument
+  environment variable $(b,TD_CONFIG) or by providing the command line argument
   $(b,--config).";
   `P "On invokation, general information about the usage of td is
   printed unless the flag $(b,--quiet) is provided."
@@ -109,18 +120,17 @@ let init =
   underscore '_' after a pattern adds a conditional space, which will only be
   inserted if the pattern is not replaced by the empty string '', which can
   happen in case of empty lists of tags."
-  ] @ (fst formats) @ [
+  ] @ entry_placeholders @ [
   `P "The following placeholders are used when specifying a date format for the
-  config option $(b,date-fmt). In fact, date formats have to parsable and are
-  thus only valid if they contain each of the listed placeholders exactly once."
-  ] @ (snd formats)
-  in List.concat [
-    description
+  config option $(b,date-fmt). Date formats have to parsable and are thus only
+  valid if they contain each of the listed placeholders exactly once."
+  ] @ date_placeholders
+  in List.concat
+  [ description
   ; configuration
   ; entries
   ; filters
-  ; formatting
-  ]
+  ; formatting ]
 
 let add = [
   `S Manpage.s_description;

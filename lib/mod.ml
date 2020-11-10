@@ -20,58 +20,58 @@ let apply m entry = let open Entry in match m with
   | Text text -> { entry with text }
   | Prio prio -> { entry with prio }
   | Del tag   -> 
-    let tags = List.filter ~f:Tag.((~=) tag) (tags entry) in
+    let tags = List.filter Tag.((~=) tag) (tags entry) in
     { entry with tags }
   | Add tag   -> 
-    match List.exists ~f:Tag.((=) tag) entry.tags with
+    match List.exists Tag.((=) tag) entry.tags with
     | true  -> entry
     | false -> { entry with tags = tag :: entry.tags }
 
-let apply_list ms entry = List.fold_right ~f:apply ~init:entry ms
+let apply_list ms entry = List.fold_right apply ms entry
 
 
 module P = struct
   open Parser_base
 
-  let text = quoted >>| text
+  let text = lift text (quoted '\'' <|> quoted '"')
   let prio = Entry.P.prio >>| prio
-  let add fmt_date = Tag.P.parser ~fmt_date ()             >>| add_tag
-  let del fmt_date = Tag.P.parser ~fmt_date ~marker:'~' () >>| del_tag
+  let add fmt = Tag.P.parser ~fmt ()             >>| add_tag
+  let del fmt = Tag.P.parser ~fmt ~marker:'~' () >>| del_tag
 
-  let parser ?(fmt_date=Date.default_fmt) () =
-    choice [ text; prio; add fmt_date; del fmt_date ] 
+  let parser ?(fmt=Date.default_fmt) () =
+    choice [ text; prio; add fmt; del fmt ] 
 
-  let of_string ?fmt_date str =
-    match parse_string (only (parser ?fmt_date ())) str with
+  let of_string ?fmt str =
+    match parse_string ~consume:All (only (parser ?fmt ())) str with
     | Ok str  -> Ok str
     | Error _ -> Error ("cannot parse modifier '" ^ str ^ "'")
 
-  let parser_list ?fmt_date () = many1 ((parser ?fmt_date ()) <* ws)
+  let parser_list ?fmt () = many1 ((parser ?fmt ()) <* ws)
 
-  let list_of_string ?fmt_date str =
-    match parse_string (only (parser_list ?fmt_date ())) str with
+  let list_of_string ?fmt str =
+    match parse_string ~consume:All (only (parser_list ?fmt ())) str with
     | Ok str  -> Ok str
     | Error _ -> Error ("cannot parse modifier '" ^ str ^ "'")
 
 end
 
-let to_string ?fmt_date = function
+let to_string ?fmt = function
   | Text str  -> "\"" ^ str ^ "\""
   | Prio prio -> Entry.P.prio_to_string prio
-  | Add tag   -> Tag.to_string ?fmt_date tag
-  | Del tag   -> Tag.P.to_string ?fmt_date ~marker:'~' tag
+  | Add tag   -> Tag.to_string ?fmt tag
+  | Del tag   -> Tag.P.to_string ?fmt ~marker:'~' tag
 
 
 let of_string = P.of_string
-let of_string_exn ?fmt_date str =
-  match of_string ?fmt_date str with
+let of_string_exn ?fmt str =
+  match of_string ?fmt str with
   | Ok m    -> m
   | Error err -> raise (ArgumentError err)
 
 
 let list_of_string = P.list_of_string
-let list_of_string_exn ?fmt_date str =
-  match list_of_string ?fmt_date str with
+let list_of_string_exn ?fmt str =
+  match list_of_string ?fmt str with
   | Ok m      -> m
   | Error err -> raise (ArgumentError err)
 

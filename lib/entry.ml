@@ -23,7 +23,7 @@ type t = {
 }
 
 let create ?(tags=[]) ?(prio=Default) text =
-  let tags = Tag.(List.dedup_and_sort ~compare tags) in
+  let tags = Tag.(List.sort_uniq compare tags) in
   {text; tags; prio}
 
 let text entry = entry.text
@@ -35,36 +35,43 @@ let context_tags entry =
     | Tag.Context c -> Some c
     | _ -> None
   in
-  List.filter_map ~f entry.tags
+  List.filter_map f entry.tags
 
 let project_tags entry =
   let f = function
     | Tag.Project ps -> Some ps
     | _ -> None
   in
-  List.filter_map ~f entry.tags
+  List.filter_map f entry.tags
 
 let due_tags entry =
   let f = function
     | Tag.Due date -> Some date
     | _ -> None
   in
-  List.filter_map ~f entry.tags
+  List.filter_map f entry.tags
 
 (* Indexed entry lists *)
-let index l = List.mapi l ~f:(fun i entry -> (i+1, entry))
+let index l = List.mapi (fun i entry -> (i+1, entry)) l
 
 let index_with indices l = 
-  let open List.Or_unequal_lengths in
-  match List.map2 indices l ~f:(fun i entry -> i, entry) with
-  | Ok l -> Result.Ok l
-  | Unequal_lengths -> Result.Error "list of indices has wrong length"
+  match List.map2 (fun i entry -> i, entry) indices l with
+  | l -> Result.Ok l
+  | exception _ -> Result.Error "list of indices has wrong length"
 
-let deindex l = List.map ~f:snd l
-let indices l = List.map ~f:fst l
+let deindex l = List.map snd l
+let indices l = List.map fst l
 
-let min_index l = List.min_elt ~compare:Int.compare (indices l)
-let max_index l = List.max_elt ~compare:Int.compare (indices l)
+let max_index l =
+  let max i j = if i < j then j else i in
+  match List.map fst l |> List.fold_left max (-1) with
+  | -1 -> None
+  | idx -> Some idx
+
+let min_index =
+  let min i j = if i < j then i else j in function
+  | [] -> None
+  | h :: t -> List.map fst t |> List.fold_left min (fst h) |> Option.some
 
 (* Module for parsing / writing related functions *)
 
@@ -73,71 +80,83 @@ module P = struct
 
   (* Default entry format string *)
 
-  let default_fmt_string = "%r %t %P_%C_%D"
+  let default_layout = "%r %s %p_%c_%d"
 
   let is_prio_char = function
     | '!' | '-' | '?' -> true
     | _               -> false
 
-  (* Writing *)
+  (* Writing entries *)
 
   let prio_to_string = function
     | High    -> "!"
     | Default -> "-"
     | Low     -> "?"
 
-  (* 
-   * What follows here is probably inefficient. I should benchmark and
-   * possibly change it.
-   * All of this is probably much faster with an Angstrom parser ?
-   *)
+  let tags fmt entry = entry.tags |> List.map (Tag.to_string ~fmt)
+  let ptags entry = project_tags entry |> List.map Tag.P.project_to_string
+  let dtags fmt entry = due_tags entry |> List.map (Date.P.to_string ~fmt)
 
-  let format ?(fmt_date=Date.default_fmt) ?(rstrip=true) ?(tag_sep=" ") fmt_str entry =
-    let prepend_tag = (^) (String.of_char Tag.P.tagmarker) in
-    let collect = String.concat ~sep:tag_sep in
-    let ctags   = context_tags entry in
-    let ptags   = project_tags entry |> List.map ~f:Tag.P.project_to_string in
-    let dtags   = due_tags entry |> List.map ~f:(Date.P.to_string ~fmt:fmt_date) in
-    let sep     = tag_sep in 
-    let open Sub in 
-    let output = fmt_str
-    |> sub ~sep (t, entry.text)
-    |> sub ~sep (r, prio_to_string entry.prio)
-    |> sub ~sep (p, collect ptags)
-    |> sub ~sep (c, collect ctags)
-    |> sub ~sep (d_, collect dtags)
-    |> sub ~sep (p', List.map ~f:prepend_tag ptags |> collect)
-    |> sub ~sep (c', List.map ~f:prepend_tag ctags |> collect)
-    |> sub ~sep (d', List.map ~f:prepend_tag dtags |> collect)
-    in if rstrip then String.rstrip output else output
+  let collect sep marks tags = match marks with
+    | false -> String.concat sep tags
+    | true ->
+      let add_mark = (^) (Char.escaped Tag.P.tagmarker) in
+      List.map add_mark tags |> String.concat sep
 
+  let maybe_add_sep sep = function
+    | false -> Fun.id
+    | true -> function "" -> "" | s -> s ^ sep
 
-  let to_string ?fmt_date entry = format ?fmt_date default_fmt_string entry
+  let substitute sep fmt entry =
+    let lookup ph postfix =
+      let adapt = maybe_add_sep sep (postfix = Some '_') in
+      let ph_lower = Char.lowercase_ascii ph in
+      let marks = (ph_lower = ph) in
+      match ph_lower with
+      | 'r' -> prio_to_string entry.prio
+      | 's' -> entry.text |> adapt
+      | 't' -> collect sep marks (tags fmt entry) |> adapt
+      | 'c' -> collect sep marks (context_tags entry) |> adapt
+      | 'p' -> collect sep marks (ptags entry) |> adapt
+      | 'd' -> collect sep marks (dtags fmt entry) |> adapt
+      | _ -> assert false
+    in
+    let is_ph = function
+    | 'r' | 's' | 't' | 'T' | 'c' | 'C' | 'p' | 'P' | 'd' | 'D' -> true
+    | _ -> false
+    in
+    let is_postfix = function '_' -> true | _ -> false in
+    sub_placeholders '%' is_ph is_postfix lookup
+
+  let format ?(fmt=Date.default_fmt) ?(sep=" ") layout entry =
+    let p = substitute sep fmt entry in
+    parse_string ~consume:All p layout |> Result.get_ok
+
+  let to_string ?fmt entry = format ?fmt default_layout entry
 
   let to_string_strict entry =
-    String.concat ~sep:" " [
+    String.concat " " [
         prio_to_string entry.prio
       ; entry.text
-      ; List.map ~f:Tag.to_string entry.tags |> String.concat ~sep:" "
+      ; List.map Tag.to_string entry.tags |> String.concat " "
     ]
 
-  let number_of_chars i = Int.to_string i |> String.length
-
-  let format_index ?fmt_date ?max_index ?(rstrip=true)
-                   ?(tag_sep=" ") fmt_string (index, entry) =
-    let index_str = Int.to_string index in
-    let max_index = Option.value ~default:index max_index in
-    let padding =
-      let l = number_of_chars max_index - number_of_chars index in
-      String.make (Int.max 0 l) ' '
+  let format_indexed ?fmt ?(max_index=(-1)) ?(sep=" ") layout (index, entry) =
+    let padding () = 
+      let chars i = Int.to_string i |> String.length in
+      let max_index = if max_index > index then max_index else index in
+      String.make (chars max_index - chars index) ' '
     in
-    let sep = tag_sep in
-    let open Sub in
-    let output = format ?fmt_date ~tag_sep ~rstrip:false fmt_string entry
-    |> sub ~sep (i,  index_str)
-    |> sub ~sep (i', index_str ^ padding)
-    |> sub ~sep (j', padding ^ index_str)
-    in if rstrip then String.rstrip output else output
+    let lookup ph _ = match ph with
+      | 'i' -> Int.to_string index
+      | 'I' -> Int.to_string index ^ padding ()
+      | 'J' -> padding () ^ Int.to_string index 
+      | _ -> assert false
+    in
+    let is_ph = function 'i' | 'I' | 'J' -> true | _ -> false in
+    let p = sub_placeholders '%' is_ph (Fun.const false) lookup in
+    let str = format ?fmt ~sep layout entry in
+    parse_string ~consume:All p str |> Result.get_ok
 
 
   (* Reading *)
@@ -149,24 +168,26 @@ module P = struct
     | '?' -> Low
     | _   -> raise ImpossibleError
 
-  let text = take_till (fun c -> Char.(c = Tag.P.tagmarker)) >>| String.strip
+  let text = take_till ((=) Tag.P.tagmarker) >>| String.trim
 
   let parser_strict =
     let f prio text tags = create ~tags ~prio text in
     lift3 f (prio <* ws) text (many (ws *> Tag.P.parser ()))
 
-  let of_string_strict str = match parse_string (only parser_strict) str with
+
+  let of_string_strict str =
+  match parse_string ~consume:All (only parser_strict) str with
   | Ok entry -> Ok entry
   | Error _  -> Error ("cannot parse entry '" ^ str ^ "'")
 
-  let parser ?fmt_date () = 
+  let parser ?fmt () = 
     let f prio text tags = create ~tags ~prio text in
-    let tags_parser = many (ws *> Tag.P.(parser ?fmt_date ())) in
+    let tags_parser = many (ws *> Tag.P.parser ?fmt ()) in
     lift3 f (option Default (prio <* ws)) text tags_parser
 
-  let of_string ?fmt_date str =
-    let entry_parser = parser ?fmt_date () in
-    match parse_string (only entry_parser) str with
+  let of_string ?fmt str =
+    let entry_parser = parser ?fmt () in
+    match parse_string ~consume:All (only entry_parser) str with
     | Ok entry -> Ok entry
     | Error _  -> Error ("cannot understand entry '" ^ str ^ "'")
 
@@ -174,7 +195,7 @@ end
 
 (* Bring parsing related functions in main Entry module *)
 
-let default_fmt_string = P.default_fmt_string
+let default_layout = P.default_layout
 
 let to_string = P.to_string
 let of_string = P.of_string
@@ -182,8 +203,8 @@ let of_string = P.of_string
 let to_string_strict = P.to_string_strict
 let of_string_strict = P.of_string_strict
 
-let of_string_exn ?fmt_date str =
-  match of_string ?fmt_date str with
+let of_string_exn ?fmt str =
+  match of_string ?fmt str with
     | Ok entry  -> entry
     | Error err -> raise (ArgumentError err)
 
@@ -192,6 +213,6 @@ let of_string_strict_exn str =
     | Ok entry  -> entry
     | Error err -> raise (ArgumentError err)
 
-let format       = P.format
-let format_index = P.format_index
+let format         = P.format
+let format_indexed = P.format_indexed
 

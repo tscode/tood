@@ -13,7 +13,7 @@ let is_fmt_legible = function
   | (_, None)   -> false
 
 let is_valid ~day ~month ~year = 
-  let feb = if year % 4 = 0 then 29 else 28 in
+  let feb = if year mod 4 = 0 then 29 else 28 in
   let lower = 1 <= day in
   let upper = match month with
     | 1 | 3 | 5
@@ -50,10 +50,16 @@ module P = struct
   (* Writing *)
 
   let format fmt_str date =
-    let open Sub in fmt_str
-    |> sub ~sep:"" (d, date.day   |> Int.to_string)
-    |> sub ~sep:"" (m, date.month |> Int.to_string)
-    |> sub ~sep:"" (y, date.year  |> Int.to_string)
+    let is_ph = function 'd' | 'm' | 'y' -> true | _ -> false in
+    let lookup ph _ = match ph with
+    | 'd' -> date.day |> Int.to_string
+    | 'm' -> date.month |> Int.to_string
+    | 'y' -> date.year |> Int.to_string
+    | _ -> assert false
+    in
+    let p = sub_placeholders '%' is_ph (Fun.const false) lookup in
+    parse_string ~consume:All p fmt_str
+    |> Result.get_ok
 
   let to_string ?fmt date = match fmt with
     | None     -> format default_fmt_string date
@@ -82,7 +88,7 @@ module P = struct
    * being true for the polymorphic compare functions in module Poly *)
 
   let date_of_polyvar_list fmt_str l =
-    match Poly.(List.sort ~compare l) with
+    match List.sort Stdlib.compare l with
     | [`Day d; `Month m; `Year y] -> create y m d
     | _ -> match l with
       | [`Fail str] -> Error
@@ -90,7 +96,7 @@ module P = struct
       | _ -> raise ImpossibleError
 
   let has_day_month_year p1 p2 p3 =
-    Poly.(List.sort ~compare [p1; p2; p3;] = [`Day; `Month; `Year])
+    Stdlib.(List.sort compare [p1; p2; p3] = [`Day; `Month; `Year])
 
   let fmt_invalid_parsing_msg fmt_str =
     "date format '" ^ (fmt_str) ^ "' is invalid for parsing"
@@ -128,7 +134,7 @@ module P = struct
       | Ok date_parser -> return date_parser
       | Error err      -> fail err
     in
-    parse_string (only fmt_parser) fmt_str
+    parse_string ~consume:All (only fmt_parser) fmt_str
 
   let fmt str = match parser_of_string str with
     | Ok date_parser -> Ok (str, date_parser)
@@ -140,12 +146,12 @@ module P = struct
 
   let default_fmt = fmt_exn default_fmt_string
 
-  let parser ?fmt_date () = match fmt_date with
+  let parser ?fmt () = match fmt with
     | Some (_, date_parser) -> date_parser
     | None                  -> default_parser
 
   let of_string ?(fmt=default_fmt) str =
-    parse_string (only (snd fmt)) str
+    parse_string ~consume:All (only (snd fmt)) str
 
 end
 

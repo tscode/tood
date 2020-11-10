@@ -2,34 +2,33 @@ open Tood
 
 let _version = "0.1"
 
-exception NotImplemented of string  
-
+exception NotImplemented of string
 
 (*******************
  * File operations *
  *******************)
 
 let default_config_path () =
-  match Sys.getenv "TD_CONFIG" with
+  match Sys.getenv_opt "TD_CONFIG" with
   | Some path -> path
-  | None      -> "~/.config/td/conf"
+  | None      -> "~/.config/td/config"
 
 let resolve_path path =
-  match String.is_substring_at path ~pos:0 ~substring:"~" with
+  match String.length path > 0 && String.get path 0 == '~' with
   | false -> path
-  | true  -> match Sys.getenv "HOME" with
-    | None -> path
+  | true  -> match Sys.getenv_opt "HOME" with
+    | None -> Log.warn "cannot access $HOME environment variable"; path
     | Some home_dir ->
-      String.substr_replace_first path ~pattern:"~" ~with_:home_dir
+      home_dir ^ String.(sub path 1 (length path - 1))
 
 let parse_config_file path = Config.parse (resolve_path path)
 
 let parse_todo_file ?(fail=false) path =
   try
-    let lines = In_channel.read_lines (resolve_path path) in
-    List.map ~f:Entry.of_string_exn lines
+    let lines = Io.read_lines (resolve_path path) in
+    List.map Entry.of_string_exn lines
   with
-  | Sys_error err as error -> begin match fail with
+  | Sys_error _ as error -> begin match fail with
     | true  -> raise error
     | false -> Log.info
       ("file '" ^ path ^ "' cannot be read");
@@ -38,15 +37,12 @@ let parse_todo_file ?(fail=false) path =
   | error -> raise error
 
 let write_todo_file path entries =
-  List.map ~f:Entry.to_string entries
-  |> Out_channel.write_lines (resolve_path path)
+  List.map Entry.to_string_strict entries
+  |> Io.write_lines (resolve_path path)
 
 let append_todo_file entries path =
-  let str =
-    List.map ~f:Entry.to_string entries |> String.concat ~sep:"\n" 
-  in
-  let f oc = Out_channel.output_string oc (str ^ "\n") in
-  Out_channel.with_file (resolve_path path) ~append:true ~f
+  List.map Entry.to_string_strict entries
+  |> Io.write_lines ~append:true (resolve_path path)
 
 
 
@@ -54,41 +50,42 @@ let append_todo_file entries path =
  * Pretty printing *
  *******************)
 
-let is_done ~done_index (index, entry) =
-  match done_index, Int.(done_index <= index) with
+let is_done ~done_index (index, _entry) =
+  match done_index, done_index <= index with
   | 0, _     -> false
   | _, value -> value
 
-let layout_entry ?(style=None) ?(offset=0) ~fmt ~fmt_date ~max_index entry =
-  (String.make offset ' ') ^ (Entry.format_index ~fmt_date ~max_index fmt entry)
+let layout_entry ?(offset=0) ~fmt ~max_index entry_fmt entry =
+  (String.make offset ' ') ^ (Entry.format_indexed ~fmt ~max_index entry_fmt entry)
 
-let layout_entries config layout indexed_entries =
+let layout_entries config style indexed_entries =
   match Entry.max_index indexed_entries with
   | None -> Log.info_str "no entries to print"
   | Some max_index -> 
-    match layout with
+    match style with
     | `Flat ->
-      let fmt = Config.entry_fmt config in
-      let fmt_date = Config.date_fmt config in
-      let f = layout_entry ~fmt ~fmt_date ~max_index in
-      List.map ~f indexed_entries |> String.concat ~sep:"\n"
+      let entry_fmt = Config.entry_fmt config in
+      let fmt = Config.date_fmt config in
+      let f = layout_entry ~fmt ~max_index entry_fmt in
+      List.map f indexed_entries |> String.concat "\n"
     | `Tree ->
-      let fmt = Config.entry_fmt_tree config in
-      let fmt_date = Config.date_fmt config in
+      let entry_fmt = Config.entry_fmt_tree config in
+      let fmt = Config.date_fmt config in
       let paths (_, entry) = match Entry.project_tags entry with
         | []       -> [[]]
         | projects -> projects
       in
+      let max a b = if a > b then a else b in
       let tree = Tree.of_leaves ~paths indexed_entries in
       let fname path name = 
-        let offset = Int.max 0 (List.length path - 1) in 
+        let offset = max 0 (List.length path - 1) in 
         String.make offset ' ' ^ Symbol.to_string name ^ "/"
       in
       let f path entry =
-        let offset = Int.max 0 (List.length path - 1) in
-        layout_entry ~offset ~fmt ~fmt_date ~max_index entry
+        let offset = max 0 (List.length path - 1) in
+        layout_entry ~offset ~fmt ~max_index entry_fmt entry
       in
-      Tree.collect ~fname ~f tree |> List.tl_exn |> String.concat ~sep:"\n"
+      Tree.collect ~fname f tree |> List.tl |> String.concat "\n"
 
 
 let sort_entries sort indexed_entries = match sort with
@@ -102,12 +99,12 @@ let sort_entries sort indexed_entries = match sort with
 
 let prompt_confirmation msg default =
   let msg = msg ^ (if default then " Proceed? [Y/n] " else " Proceed? [N/y] ") in
-  print_endline msg;
+  print_string msg; flush_all ();
   let rec read_answer () = begin
-    match In_channel.(input_line stdin) |> Option.map ~f:String.lowercase with
-    | None | Some "" -> default
-    | Some "y"  -> true
-    | Some "n"  -> false
+    match input_line stdin |> String.lowercase_ascii with
+    | "" -> default
+    | "y" | "yes" -> true
+    | "n" | "no"  -> false
     | _ -> print_endline "You must type 'y' or 'n'"; read_answer ()
   end
   in read_answer ()
@@ -161,7 +158,7 @@ let move ?(f=fun x -> x) config verbose noprompt sel msg from_path to_path =
       match to_path with
       | None -> ()
       | Some to_path ->
-        let selected = List.map ~f:(fun (i,x) -> (i, f x)) selected in
+        let selected = List.map (fun (i, x) -> (i, f x)) selected in
         append_todo_file (Entry.deindex selected) to_path
 
 
@@ -172,8 +169,8 @@ let _td_add config source entry_str =
     | `Todo -> Config.todo_path config
     | `Done -> Config.done_path config
   in
-  let fmt_date = Config.date_fmt config in
-  let entry = Entry.of_string_exn ~fmt_date entry_str in
+  let fmt = Config.date_fmt config in
+  let entry = Entry.of_string_exn ~fmt entry_str in
   append_todo_file [entry] path
 
 let td_add config source entry_str =
@@ -183,8 +180,8 @@ let td_add config source entry_str =
 (* td do *)
 
 let _td_do config verbose noprompt failed filter =
-  let fmt_date = Config.date_fmt config in
-  let sel = Filter.of_string_exn ~fmt_date filter in
+  let fmt = Config.date_fmt config in
+  let sel = Filter.of_string_exn ~fmt filter in
   let msg l = 
     "You are about to mark " ^ l ^ " entries as done."
   in
@@ -203,8 +200,8 @@ let td_do config verbose noprompt failed filter =
 (* td undo *)
 
 let _td_undo config verbose noprompt filter =
-  let fmt_date = Config.date_fmt config in
-  let sel = Filter.of_string_exn ~fmt_date filter in
+  let fmt = Config.date_fmt config in
+  let sel = Filter.of_string_exn ~fmt filter in
   let msg l =
     "You are about to mark " ^ l ^ " done entries as undone."
   in
@@ -219,8 +216,8 @@ let td_undo config verbose noprompt filter =
 (* td rm *)
 
 let _td_rm config verbose noprompt source filter =
-  let fmt_date = Config.date_fmt config in
-  let sel = Filter.of_string_exn ~fmt_date filter in
+  let fmt = Config.date_fmt config in
+  let sel = Filter.of_string_exn ~fmt filter in
   let msg, path = match source with
   | `Todo -> 
     let msg l =
@@ -250,7 +247,7 @@ let modify config verbose noprompt sel msg path mods =
   | selected ->
     let () = list_entries_if_verbose config verbose selected in
     let proceed =
-      match List.length selected, List.exists ~f:Mod.is_text mods with
+      match List.length selected, List.exists Mod.is_text mods with
       | 1, _ -> true
       | l, false -> if noprompt then true else prompt_confirmation (msg l) true
       | l, true  ->
@@ -261,15 +258,16 @@ let modify config verbose noprompt sel msg path mods =
     | false -> Log.info "aborted"
     | true  -> 
       entries
-      |> Filter.map_indexed sel ~f:(Mod.apply_list mods)
+      |> Filter.map_indexed sel (Mod.apply_list mods)
       |> Entry.deindex
       |> write_todo_file path
 
-let parse_mod_args fmt_date str =
+let parse_mod_args fmt str =
   let open Angstrom in
   let open Parser in
-  let p = lift2 Tuple2.create (filter ~fmt_date () <* ws) (mods ~fmt_date ()) in
-  match parse_string p str with
+  let tup x y = (x, y) in
+  let p = lift2 tup (filter ~fmt () <* ws) (mods ~fmt ()) in
+  match parse_string ~consume:All p str with
   | Ok t    -> t
   | Error _ ->
     let msg = 
@@ -295,8 +293,8 @@ let td_mod config noprompt verbose source filter_mod_str =
 (* td ls *)
 
 let _td_ls config source order layout filter =
-  let fmt_date = Config.date_fmt config in
-  let sel = Filter.of_string_exn ~fmt_date filter in
+  let fmt = Config.date_fmt config in
+  let sel = Filter.of_string_exn ~fmt filter in
   let entries = match source with
     | `Todo -> parse_todo_file (Config.todo_path config)
     | `Done -> parse_todo_file (Config.done_path config)
@@ -318,10 +316,10 @@ let td_ls config source order layout filter =
 
 let _td_sync config = 
   match Config.sync_cmd config with
-  | None     -> Log.info "no sync command configured"
+  | None     -> Log.info "no synchronization command set in config file"
   | Some cmd -> match Unix.system cmd with
-    | Ok ()   -> Log.info "synchronization successfull"
-    | Error _ -> raise (Failure "sync command exited unsuccessfully")
+    | Unix.WEXITED 0 -> Log.info "synchronization successfull"
+    | _ -> raise (Failure "synchronization was not successfull")
 
 let td_sync config  = wrap config (fun c -> _td_sync c)
 
@@ -329,17 +327,16 @@ let td_sync config  = wrap config (fun c -> _td_sync c)
 (* td init *)
 
 let _td_init quiet config = 
-  let input_path default = 
-    match In_channel.(input_line stdin) with
-    | None | Some "" -> default
-    | Some path -> path
+  let input_path default =
+    match input_line stdin with
+    | "" -> default
+    | path -> path
   in
   let touch_tood_files config =
     let todo_path = Config.todo_path config |> resolve_path in
     let done_path = Config.done_path config |> resolve_path in
-    let f _ = () in
-    Out_channel.with_file todo_path ~append:true ~f;
-    Out_channel.with_file done_path ~append:true ~f
+    Io.write_lines ~append:true todo_path [];
+    Io.write_lines ~append:true done_path [];
   in
   match config with
   | Ok config ->
@@ -357,15 +354,15 @@ let _td_init quiet config =
     print_endline 
       ("A default td configuration file will be created at '" ^ path ^ "'.");
     print_string ("Path for the todo file (default: '" ^ todo_path ^ "'): ");
-    Out_channel.(flush stdout);
+    flush_all ();
     let todo_path = input_path todo_path in
     print_string ("Path for the done file (default: '" ^ done_path ^ "'): ");
-    Out_channel.(flush stdout);
+    flush_all ();
     let done_path = input_path done_path in
     let config = { fallback with todo_path; done_path } in
-    Out_channel.write_all path ~data:(Config.to_string config);
+    Io.write_all path (Config.to_string config);
     touch_tood_files config;
-    List.iter ~f:print_endline [
+    List.iter print_endline [
       "The configuration file was created successfully."
     ; "Start adding entries with 'td add ...'."
     ; "For general usage information about td look up 'td init --help'."
@@ -384,7 +381,7 @@ open Cmdliner
 let config_t =
   let doc =
     "Path to the configuration file. If provided, this argument overrides the
-    default path ~/.config/td/conf and the environment variable TD_CONFIG."
+    default path ~/.config/td/config and the environment variable TD_CONFIG."
   in
   let path =
     Arg.(value & opt string (default_config_path ()) & info ["c"; "config"]
@@ -404,7 +401,7 @@ let add_cmd =
   in
   let entry_t =
     Arg.(non_empty & pos_all string [] & info [] ~docv:"TODO")
-    |> Term.(app (const (String.concat ~sep:" ")))
+    |> Term.(app (const (String.concat " ")))
   in
   Term.(const td_add $ config_t $ source_t $ entry_t),
   Term.info "add" ~doc ~sdocs:Manpage.s_common_options ~man
@@ -435,7 +432,7 @@ let mod_cmd =
   in
   let filter_mod_t =
     Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MODS")
-    |> Term.(app (const (String.concat ~sep:" ")))
+    |> Term.(app (const (String.concat " ")))
   in
   let doc = "modify entries" in
   let man = Man.mod_ in
@@ -447,7 +444,7 @@ let do_cmd =
   let doc = "Filter expression used to select entries." in
   let filter_t =
     Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER")
-    |> Term.(app (const (String.concat ~sep:" ")))
+    |> Term.(app (const (String.concat " ")))
   in
   let doc = "List selected entries before prompting." in
   let verbose_t =
@@ -474,7 +471,7 @@ let undo_cmd =
   let doc = "Filter expression used to select entries." in
   let filter_t =
     Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER")
-    |> Term.(app (const (String.concat ~sep:" ")))
+    |> Term.(app (const (String.concat " ")))
   in
   let doc = "List selected entries." in
   let verbose_t =
@@ -495,7 +492,7 @@ let rm_cmd =
   let doc = "Filter applied to select entries." in
   let filter_t =
     Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER")
-    |> Term.(app (const (String.concat ~sep:" ")))
+    |> Term.(app (const (String.concat " ")))
   in
   let doc = "List the selected entries." in
   let verbose_t =
@@ -527,7 +524,7 @@ let ls_cmd =
   let man = Man.ls in
   let filter_t =
     Arg.(value & pos_all string [] & info [] ~docv:"FILTER")
-    |> Term.(app (const (String.concat ~sep:" ")))
+    |> Term.(app (const (String.concat " ")))
   in
   let source_t =
     let doc   = "List entries from the todo-file file (default)." in

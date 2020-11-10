@@ -2,5 +2,4 @@
  (name td)
  (public_name td)
  (package td)
- (libraries tood core cmdliner)
- (flags -open Core))
+ (libraries tood unix cmdliner))

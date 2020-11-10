@@ -3,7 +3,7 @@ open Types
 type t = symbol
 
 let to_string sym = sym
-let of_string = Angstrom.parse_string Parser_base.(only symbol)
+let of_string = Angstrom.parse_string ~consume:All Parser_base.(only symbol)
 
 let of_string_exn str = match of_string str with
   | Ok sym -> sym

@@ -23,8 +23,8 @@ let fallback = {
     todo_path      = "./todo.tood"
   ; done_path      = "./done.tood"
   ; sync_cmd       = None
-  ; entry_fmt      = "%J %r %t %P_%C_%D"
-  ; entry_fmt_tree = "%J %r %t %C_%D"
+  ; entry_fmt      = "%J %r %s %p_%c_%d"
+  ; entry_fmt_tree = "%J %r %s %c_%d"
   ; date_fmt       = Date.fmt_exn "%y-%m-%d"
 }
 
@@ -34,7 +34,7 @@ let to_string config =
     | Some v -> key ^ " : " ^ v
     | None   -> "# " ^ key ^ " : "
   in
-  String.concat ~sep:"\n" [
+  String.concat "\n" [
     write "todo-path" config.todo_path
   ; write "done-path" config.done_path
   ; write "entry-fmt" config.entry_fmt
@@ -58,15 +58,15 @@ let parse path =
   let comment = char '#' *> take_all *> return () in
   let ignore  = (ws *> comment <|> only ws) *> return None in
   let key     = ws *> symbol <* ws <* char ':' <* ws in
-  let value   = take_while Char.((<>) '#') >>| String.strip in
+  let value   = take_while ((<>) '#') >>| String.trim in
   let tup a b = Some (a, b) in
   let parser  = lift2 tup key (value <* opt comment) <|> ignore in
-  let f line  = match parse_string (only parser) line with
+  let f line  = match parse_string ~consume:All (only parser) line with
     | Ok tup  -> tup
     | Error _ -> raise (ParseError line)
   in
-  try List.filter_map ~f (In_channel.read_lines path)
-  |> List.fold ~init:fallback ~f:add |> Result.return
+  try List.filter_map f (Io.read_lines path)
+  |> List.fold_left add fallback |> Result.ok
   with
   | Sys_error _  -> Error (`Not_found path)
   | KeyError key -> Error 

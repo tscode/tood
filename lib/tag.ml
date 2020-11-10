@@ -10,9 +10,9 @@ let project sym = Project sym
 let due date    = Due date
 
 let compare t t' = match t, t' with
-  | Context str, Context str' -> String.compare str str'
-  | Project pr, Project pr'   -> List.compare String.compare pr pr'
-  | Due d, Due d'             -> Date.compare d d' 
+  | Context str, Context str' -> compare str str'
+  | Project pr, Project pr'   -> compare pr pr'
+  | Due d, Due d'             -> compare d d' 
   | Context _, Project _      -> -1
   | Project _, Due _          -> -1
   | Context _, Due _          -> -1
@@ -37,14 +37,14 @@ module P = struct
 
   let project_to_string = function
     | []  -> ""
-    | [p] -> p ^ String.of_char project_sep
-    | ts  -> String.concat ~sep:(String.of_char project_sep) ts
+    | [p] -> p ^ Char.escaped project_sep
+    | ts  -> String.concat (Char.escaped project_sep) ts
 
-  let to_string ?fmt_date ?(marker=tagmarker) = 
-    let m = String.of_char tagmarker in function
+  let to_string ?fmt ?(marker=tagmarker) = 
+    let m = Char.escaped marker in function
       | Context t  -> m ^ t
       | Project ts -> m ^ project_to_string ts
-      | Due date   -> m ^ Date.to_string ?fmt:fmt_date date
+      | Due date   -> m ^ Date.to_string ?fmt date
 
   (* Reading *)
 
@@ -56,21 +56,21 @@ module P = struct
       (symbol <* char project_sep)
       (sep_by (char project_sep) symbol)
 
-  let parser ?fmt_date ?(marker=tagmarker) () =
-    let date_parser = Date.P.parser ?fmt_date () in
+  let parser ?fmt ?(marker=tagmarker) () =
+    let date_parser = Date.P.parser ?fmt () in
         (char marker *> project_tag >>| project)
     <|> (char marker *> context_tag >>| context)
     <|> (char marker *> date_parser >>| due)
 
-  let of_string ?fmt_date ?marker str =
-    parse_string (only (parser ?fmt_date ?marker ())) str
+  let of_string ?fmt ?marker str =
+    parse_string ~consume:All (only (parser ?fmt ?marker ())) str
 
 end
 
 let to_string = P.to_string ~marker:P.tagmarker
 let of_string = P.of_string ~marker:P.tagmarker
 
-let of_string_exn ?fmt_date str = match of_string ?fmt_date str with
+let of_string_exn ?fmt str = match of_string ?fmt str with
   | Ok tag -> tag
   | Error _ -> raise (ArgumentError ("invalid tag '" ^ str ^ "'"))
 

@@ -52,9 +52,9 @@ module Tag : sig
     | Project of Symbol.t list
     | Due     of Date.t
 
-  val to_string     : ?fmt_date : Date.fmt -> t -> string
-  val of_string     : ?fmt_date : Date.fmt -> string -> t res
-  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+  val to_string     : ?fmt : Date.fmt -> t -> string
+  val of_string     : ?fmt : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt : Date.fmt -> string -> t
 
   val context : Symbol.t -> t
   val project : Symbol.t list -> t
@@ -92,11 +92,14 @@ module Entry : sig
   val deindex : (int * t) list -> t list
   val indices : (int * t) list -> int list
 
+  (* Writing of entries *)
+  val to_string        : ?fmt : Date.fmt -> t -> string
+  val to_string_strict : t -> string
+
   (* Less strict parsing with custom date formats *)
 
-  val to_string     : ?fmt_date : Date.fmt -> t -> string
-  val of_string     : ?fmt_date : Date.fmt -> string -> t res
-  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+  val of_string     : ?fmt : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt : Date.fmt -> string -> t
 
   (* Strict printing / parsing that does not tolerate deviations from the
    * 'official' format *)
@@ -106,18 +109,16 @@ module Entry : sig
 
   (* Entry formatting *)
 
-  val default_fmt_string : string
+  val default_layout : string
 
   val format :
-    ?fmt_date : Date.fmt ->
-    ?rstrip   : bool   ->
-    ?tag_sep  : string -> string -> t -> string
+    ?fmt     : Date.fmt ->
+    ?sep     : string -> string -> t -> string
 
-  val format_index :
-    ?fmt_date  : Date.fmt -> 
+  val format_indexed :
+    ?fmt       : Date.fmt -> 
     ?max_index : int    -> 
-    ?rstrip    : bool   -> 
-    ?tag_sep   : string -> string -> int * t -> string
+    ?sep       : string -> string -> int * t -> string
 
 end
 
@@ -125,8 +126,8 @@ module Filter : sig
 
   type t
 
-  val of_string     : ?fmt_date : Date.fmt -> string -> t res
-  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+  val of_string     : ?fmt : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt : Date.fmt -> string -> t
   val to_string : t -> string
 
   val and' : t -> t -> t
@@ -149,7 +150,7 @@ module Filter : sig
   val matches : t -> ?index : int -> Entry.t -> bool
   val filter  : t -> Entry.t list -> Entry.t list
   val split   : t -> Entry.t list -> Entry.t list * Entry.t list
-  val map     : t -> f : (Entry.t -> Entry.t) -> Entry.t list -> Entry.t list
+  val map     : t -> (Entry.t -> Entry.t) -> Entry.t list -> Entry.t list
 
   val filter_indexed : t -> (int * Entry.t) list -> (int * Entry.t) list
 
@@ -159,9 +160,9 @@ module Filter : sig
     (int * Entry.t) list * (int * Entry.t) list
 
   val map_indexed :
-    t                        ->
-    f : (Entry.t -> Entry.t) ->
-    (int * Entry.t) list     ->
+    t                    ->
+    (Entry.t -> Entry.t) ->
+    (int * Entry.t) list ->
     (int * Entry.t) list
 
 end
@@ -184,12 +185,12 @@ module Mod : sig
   val apply      : t -> Entry.t -> Entry.t
   val apply_list : t list -> Entry.t -> Entry.t
 
-  val to_string     : ?fmt_date : Date.fmt -> t -> string
-  val of_string     : ?fmt_date : Date.fmt -> string -> t res
-  val of_string_exn : ?fmt_date : Date.fmt -> string -> t
+  val to_string     : ?fmt : Date.fmt -> t -> string
+  val of_string     : ?fmt : Date.fmt -> string -> t res
+  val of_string_exn : ?fmt : Date.fmt -> string -> t
 
-  val list_of_string     : ?fmt_date : Date.fmt -> string -> t list res
-  val list_of_string_exn : ?fmt_date : Date.fmt -> string -> t list
+  val list_of_string     : ?fmt : Date.fmt -> string -> t list res
+  val list_of_string_exn : ?fmt : Date.fmt -> string -> t list
 
 end
 
@@ -210,12 +211,12 @@ module Tree : sig
   val of_leaves : ?name : Symbol.t -> paths : ('a -> path list) -> 'a list -> 'a t
   val to_leaves : 'a t -> 'a list
 
-  val map : f : ('a -> 'b) -> 'a t -> 'b t
+  val map : ('a -> 'b) -> 'a t -> 'b t
 
   val collect :
-    ?path  : path                     ->
+    ?path  : path ->
     ?fname : (path -> Symbol.t -> 'b) ->
-    f      : (path -> 'a -> 'b)       -> 'a t -> 'b list
+    (path -> 'a -> 'b) -> 'a t -> 'b list
 
 end
 
@@ -229,7 +230,7 @@ module Parser : sig
   val opt : 'a t -> 'a option t
 
   val integer : int t
-  val quoted  : string t
+  val quoted  : char -> string t
 
   val take_all : string t
   val take_till_unescaped : (char -> bool) -> string t
@@ -238,16 +239,19 @@ module Parser : sig
 
   val symbol : Symbol.t t
 
-  val date   : ?fmt_date : Date.fmt -> unit -> Date.t t
-  val tag    : ?fmt_date : Date.fmt -> unit -> Tag.t t
-  val entry  : ?fmt_date : Date.fmt -> unit -> Entry.t t
-  val filter : ?fmt_date : Date.fmt -> unit -> Filter.t t
-  val mods   : ?fmt_date : Date.fmt -> unit -> Mod.t list t
+  val date   : ?fmt : Date.fmt -> unit -> Date.t t
+  val tag    : ?fmt : Date.fmt -> unit -> Tag.t t
+  val entry  : ?fmt : Date.fmt -> unit -> Entry.t t
+  val filter : ?fmt : Date.fmt -> unit -> Filter.t t
+  val mods   : ?fmt : Date.fmt -> unit -> Mod.t list t
 
   val entry_strict : Entry.t t 
 
 end
 
+(* Substitution of placeholders *)
+
+(*
 module Sub : sig
 
   type t
@@ -260,6 +264,7 @@ module Sub : sig
   val patterns : t list
 
 end
+*)
 
 (* Exceptions *)
 
