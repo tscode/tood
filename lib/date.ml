@@ -46,11 +46,13 @@ module P = struct
   (* Writing *)
 
   let format fmt_str date =
-    let is_ph = function 'd' | 'm' | 'y' -> true | _ -> false in
+    let is_ph = function 'd' | 'm' | 'y' | 'D' | 'M' -> true | _ -> false in
     let lookup ph _ = match ph with
-    | 'd' -> date.day |> Int.to_string
-    | 'm' -> date.month |> Int.to_string
-    | 'y' -> date.year |> Int.to_string
+    | 'd' -> Printf.sprintf "%02d" date.day
+    | 'm' -> Printf.sprintf "%02d" date.month
+    | 'D' -> Int.to_string date.day
+    | 'M' -> Int.to_string date.month
+    | 'y' -> Int.to_string date.year
     | _ -> assert false
     in
     let p = sub_placeholders '%' is_ph (Fun.const false) lookup in
@@ -101,7 +103,9 @@ module P = struct
     let str = take_till_unescaped (function '%' -> true | _ -> false) in
     let sub = choice [
         string "%d" *> return `Day
+      ; string "%D" *> return `Day
       ; string "%m" *> return `Month
+      ; string "%M" *> return `Month
       ; string "%y" *> return `Year
     ] in
     let date_fail str = [`Fail str] in
