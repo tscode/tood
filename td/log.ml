@@ -1,5 +1,5 @@
 
-let info_str str = "< " ^ str ^ " >"
+let info_str str = "info: " ^ str 
 let warn_str str = "warning: " ^ str
 let err_str  str = "error: " ^ str
 
