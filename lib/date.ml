@@ -8,10 +8,6 @@ type t = {
 
 type fmt = string * t Parser_base.t
 
-let is_fmt_legible = function
-  | (_, Some _) -> true
-  | (_, None)   -> false
-
 let is_valid ~day ~month ~year = 
   let feb = if year mod 4 = 0 then 29 else 28 in
   let lower = 1 <= day in
