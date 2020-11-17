@@ -51,27 +51,19 @@ let chainl1 expr op =
 let take_till_unescaped_ = take_till
 
 let take_till_unescaped f =
-  let fail_at_end = peek_char >>= function
-    | None -> fail ""
-    | Some c -> match f c with
-      | true -> fail ""
-      | false -> return ()
+  let at_end = peek_char_fail >>= fun c ->
+    if f c then fail "" else return ()
   in
   let escaped = char '\\' *> satisfy f >>| Char.escaped in
   let bslash = char '\\' >>| Char.escaped in
-  let block = take_till (fun c -> f c || c = '\\')
-  in
-  lift (String.concat "") (fail_at_end *> (escaped <|> bslash <|> block) |> many)
+  let block = take_till (fun c -> f c || c = '\\') in
+  lift (String.concat "") (at_end *> (escaped <|> bslash <|> block) |> many)
 
 let take_till_unescaped_char c = take_till_unescaped ((=) c)
 
 let take_all = take_till (function _ -> false)
 
 let quoted c = char c *> take_till_unescaped ((=) c) <* char c
-
-let fail_at_eoi p = p >>= function
-  | "" -> peek_char_fail *> return ""
-  | str -> return str
 
 (* Parser that substitutes placeholders in a string.
  * The placeholder has to consist of a prefix char, like '%', the placeholder
@@ -85,7 +77,7 @@ let sub_placeholders prefix is_ph is_postfix lookup =
   let ph = lift2 lookup (satisfy is_ph) (opt (satisfy is_postfix)) in
   let part = choice
     [ (char prefix *> (ph <|> return (Char.escaped prefix)))
-    ; fail_at_eoi (take_till_unescaped_char prefix) ]
+    ; peek_char_fail *> (take_till_unescaped_char prefix) ]
   in
   many part >>| String.concat ""
 
