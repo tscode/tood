@@ -16,6 +16,15 @@ let prio_of_int = function
   | a when a < 0 -> Low
   | _ -> raise ImpossibleError
 
+type part =
+  | Index
+  | Prio
+  | Text
+  | Tag
+  | Project
+  | Context
+  | Date
+
 type t = {
     text : string
   ; tags : Tag.t list
@@ -107,18 +116,19 @@ module P = struct
     | false -> Fun.id
     | true -> function "" -> "" | s -> s ^ sep
 
-  let substitute sep fmt entry =
+  let substitute ?(style = fun _ _ s -> s) sep fmt entry =
     let lookup ph postfix =
       let adapt = maybe_add_sep sep (postfix = Some '_') in
       let ph_lower = Char.lowercase_ascii ph in
       let marks = (ph_lower = ph) in
+      let stl = style entry in
       match ph_lower with
-      | 'r' -> prio_to_string entry.prio
-      | 's' -> entry.text |> adapt
-      | 't' -> collect sep marks (tags fmt entry) |> adapt
-      | 'c' -> collect sep marks (context_tags entry) |> adapt
-      | 'p' -> collect sep marks (ptags entry) |> adapt
-      | 'd' -> collect sep marks (dtags fmt entry) |> adapt
+      | 'r' -> prio_to_string entry.prio |> stl Prio
+      | 's' -> entry.text |> adapt |> stl Text
+      | 't' -> collect sep marks (tags fmt entry) |> adapt |> stl Tag
+      | 'c' -> collect sep marks (context_tags entry) |> adapt |> stl Context
+      | 'p' -> collect sep marks (ptags entry) |> adapt |> stl Project
+      | 'd' -> collect sep marks (dtags fmt entry) |> adapt |> stl Date
       | _ -> assert false
     in
     let is_ph = function
@@ -128,8 +138,8 @@ module P = struct
     let is_postfix = function '_' -> true | _ -> false in
     sub_placeholders '%' is_ph is_postfix lookup
 
-  let format ?(fmt=Date.default_fmt) ?(sep=" ") layout entry =
-    let p = substitute sep fmt entry in
+  let format ?style ?(fmt=Date.default_fmt) ?(sep=" ") layout entry =
+    let p = substitute ?style sep fmt entry in
     parse_string ~consume:All p layout |> Result.get_ok
 
   let to_string ?fmt entry = format ?fmt default_layout entry
@@ -141,21 +151,25 @@ module P = struct
       ; List.map Tag.to_string entry.tags |> String.concat " "
     ]
 
-  let format_indexed ?fmt ?(max_index=(-1)) ?(sep=" ") layout (index, entry) =
+  let format_indexed ?(style = fun _ _ s -> s)
+                     ?fmt
+                     ?(max_index=(-1))
+                     ?(sep=" ") layout (index, entry) =
     let padding () = 
       let chars i = Int.to_string i |> String.length in
       let max_index = if max_index > index then max_index else index in
       String.make (chars max_index - chars index) ' '
     in
+    let stl = style entry Index in
     let lookup ph _ = match ph with
-      | 'i' -> Int.to_string index
-      | 'I' -> Int.to_string index ^ padding ()
-      | 'J' -> padding () ^ Int.to_string index 
+      | 'i' -> Int.to_string index |> stl
+      | 'I' -> Int.to_string index ^ padding () |> stl
+      | 'J' -> padding () ^ Int.to_string index  |> stl
       | _ -> assert false
     in
     let is_ph = function 'i' | 'I' | 'J' -> true | _ -> false in
     let p = sub_placeholders '%' is_ph (Fun.const false) lookup in
-    let str = format ?fmt ~sep layout entry in
+    let str = format ~style ?fmt ~sep layout entry in
     parse_string ~consume:All p str |> Result.get_ok
 
 

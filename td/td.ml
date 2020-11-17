@@ -333,18 +333,29 @@ let is_done ~done_index (index, _entry) =
   | 0, _     -> false
   | _, value -> value
 
-let layout_entry ?(offset=0) ~fmt ~max_index entry_fmt entry =
-  (String.make offset ' ') ^ (Entry.format_indexed ~fmt ~max_index entry_fmt entry)
+let style options _entry = let open Entry in function
+  | Index   -> Config.get_printer options "index-style"
+  | Prio    -> Config.get_printer options "prio-style"
+  | Text    -> Config.get_printer options "text-style"
+  | Tag     -> Config.get_printer options "tag-style"
+  | Project -> Config.get_printer options "project-style"
+  | Context -> Config.get_printer options "context-style"
+  | Date    -> Config.get_printer options "date-style"
 
-let layout_entries options style indexed_entries =
+let layout_entry ?(offset=0) max_index style fmt entry_fmt entry =
+  let str = Entry.format_indexed ~max_index ~style ~fmt entry_fmt entry in
+  (String.make offset ' ') ^ str
+
+let layout_entries options layout indexed_entries =
   match Entry.max_index indexed_entries with
   | None -> Log.info_str "no entries to print"
   | Some max_index -> 
-    match style with
+    let style = style options in
+    match layout with
     | `Flat ->
       let entry_fmt = Config.get options "entry-fmt" in
       let fmt = Config.get options "date-fmt" |> Date.fmt_exn in
-      let f = layout_entry ~fmt ~max_index entry_fmt in
+      let f = layout_entry max_index style fmt entry_fmt in
       List.map f indexed_entries |> String.concat "\n"
     | `Tree ->
       let entry_fmt = Config.get options "entry-fmt-tree" in
@@ -361,7 +372,7 @@ let layout_entries options style indexed_entries =
       in
       let f path entry =
         let offset = max 0 (List.length path - 1) in
-        layout_entry ~offset ~fmt ~max_index entry_fmt entry
+        layout_entry ~offset max_index style fmt entry_fmt entry
       in
       Tree.collect ~fname f tree |> List.tl |> String.concat "\n"
 

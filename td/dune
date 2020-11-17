@@ -2,4 +2,4 @@
  (name td)
  (public_name td)
  (package td)
- (libraries tood unix cmdliner))
+ (libraries tood unix cmdliner ANSITerminal))

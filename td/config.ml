@@ -7,7 +7,7 @@ exception ParseError of string
 exception KeyError of string
 exception ValueError of string
 
-(* Configuration options for handling a todo list *)
+(* Configuration options for a todo list *)
 type options = string Dict.t
 
 let fallback_options =
@@ -18,6 +18,13 @@ let fallback_options =
   |> Dict.add "entry-fmt-tree" "%J %r %s %c_%d"
   |> Dict.add "date-fmt" "%y-%m-%d"
   |> Dict.add "sync-cmd" ""
+  |> Dict.add "index-style" ""
+  |> Dict.add "prio-style" ""
+  |> Dict.add "text-style" ""
+  |> Dict.add "tag-style" ""
+  |> Dict.add "project-style" ""
+  |> Dict.add "context-style" ""
+  |> Dict.add "date-style" ""
 
 let fallback =
   [ "", fallback_options
@@ -71,7 +78,6 @@ let options config name =
 let options_exn config name =
   options config name |> Option.get
 
-
 let to_string config = 
   let append key value l =
     let line = match value with
@@ -84,6 +90,35 @@ let to_string config =
     Dict.fold append options [] |> String.concat "\n" |> (^) (name ^ "\n\n")
   in
   List.map collect_options config |> String.concat "\n\n"
+
+let printer_exn str =
+  let style = let open ANSITerminal in function
+  | "black"   -> black   | "on-black"   -> on_black
+  | "red"     -> red     | "on-red"     -> on_red
+  | "green"   -> green   | "on-green"   -> on_green
+  | "yellow"  -> yellow  | "on-yellow"  -> on_yellow
+  | "blue"    -> blue    | "on-blue"    -> on_blue
+  | "magenta" -> magenta | "on-magenta" -> on_magenta
+  | "cyan"    -> cyan    | "on-cyan"    -> on_cyan
+  | "white"   -> white   | "on-white"   -> on_white
+  | "bold"    -> Bold    | "underlined" -> Underlined
+  | str -> raise (ArgumentError str)
+  in
+  let styles = Str.split (Str.regexp "[ \t]+") str |> List.map style in
+  ANSITerminal.sprintf styles "%s"
+
+let printer str =
+  match printer_exn str with
+  | style -> Ok style
+  | exception (ArgumentError err) -> Error err
+
+let get_printer options key =
+  printer_exn (get_safe options key |> Option.value ~default:"")
+
+let get_printer_safe options key =
+  match get_safe options key with
+  | None -> Some (printer_exn "")
+  | Some style -> printer style |> Result.to_option
 
 let sanity_tests =
   let always_ok =
@@ -101,6 +136,13 @@ let sanity_tests =
   ; "entry-fmt-tree", always_ok
   ; "date-fmt",       test_result Date.fmt "date-fmt"
   ; "sync-cmd",       always_ok
+  ; "index-style",    test_result printer "index-style"
+  ; "prio-style",     test_result printer "prio-style"
+  ; "text-style",     test_result printer "text-style"
+  ; "tag-style",      test_result printer "tag-style"
+  ; "project-style",  test_result printer "project-style"
+  ; "context-style",  test_result printer "context-style"
+  ; "date-style",     test_result printer "date-style"
   ]
 
 let valid_option_keys = List.map fst sanity_tests

@@ -109,15 +109,26 @@ module Entry : sig
 
   (* Entry formatting *)
 
+  type part =
+    | Index
+    | Prio
+    | Text
+    | Tag
+    | Project
+    | Context
+    | Date
+
   val default_layout : string
 
   val format :
-    ?fmt     : Date.fmt ->
-    ?sep     : string -> string -> t -> string
+    ?style : (t -> part -> string -> string) ->
+    ?fmt   : Date.fmt ->
+    ?sep   : string -> string -> t -> string
 
   val format_indexed :
+    ?style     : (t -> part -> string -> string) ->
     ?fmt       : Date.fmt -> 
-    ?max_index : int    -> 
+    ?max_index : int -> 
     ?sep       : string -> string -> int * t -> string
 
 end
