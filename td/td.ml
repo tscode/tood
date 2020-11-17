@@ -21,9 +21,7 @@ let wrap_config config listname cmd =
   | `Ok config      -> run config
   | `Invalid err    -> Log.err err
   | `Not_found path -> 
-    sprintf "config file %s cannot be accessed (using fallback options)" path
-    |> Log.info;
-    run Config.fallback
+    sprintf "config file %s cannot be accessed" path |> Log.err
 
 let wrap_error cmd = 
   try cmd () with
@@ -269,7 +267,7 @@ let term config_t listname_t =
     let doc = "Suppress informative output of the command." in
     Arg.(value & flag & info ["q"; "quiet"] ~doc)
   in
-  let doc = "initialize configuration and tood files" in
+  let doc = "initialize a configuration file" in
   Term.(const cmd $ config_t $ listname_t $ quiet_t),
   Term.info "init" ~doc ~sdocs:Manpage.s_common_options ~man
 
@@ -691,6 +689,7 @@ let term config_t listname_t =
 
 end
 
+
 module Td_sync = struct
 
 let cmd' options _listname = 
@@ -714,12 +713,49 @@ let man = [
 ]
 
 let term config_t listname_t =
-  let doc = "execute a configured synchronization command" in
+  let doc = "execute a synchronization command" in
   Term.(const cmd $ config_t $ listname_t),
   Term.info "sync" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
 
+
+module Td_lists = struct
+
+let cmd' = function
+  | `Invalid err -> Log.err err
+  | `Not_found p -> sprintf "config file '%s' cannot be accessed" p |> Log.err
+  | `Ok config ->
+  let summary listname =
+    let options = Config.options_exn config listname in
+    let list_length path = Util.parse_list path |> List.length in
+    let todo_length = list_length (Config.get options "todo-path") in
+    let done_length = list_length (Config.get options "done-path") in
+    sprintf "%s (%d/%d)" listname todo_length done_length
+  in
+  List.map summary (Config.names config)
+  |> String.concat "\n"
+  |> print_endline
+
+let cmd config = Util.wrap_error (fun () -> cmd' config)
+
+open Cmdliner
+
+let man = [
+  `S Manpage.s_description;
+  `P "Summarize the todo lists that are currently maintained. It prints the list
+  name as well as the number of undone/done entries. The first name printed
+  is the default list.
+  To apply a td command to a different list, run $(b,td [cmd] -l [listname]
+  ...)"
+]
+
+let term config_t _listname_t =
+  let doc = "list all todo lists" in
+  Term.(const cmd $ config_t),
+  Term.info "lists" ~doc ~sdocs:Manpage.s_common_options ~man
+
+end
 
 open Cmdliner
 
@@ -771,6 +807,7 @@ let default_cmd =
 let () = 
   let commands = [
       Td_init.term config_t listname_t
+    ; Td_lists.term config_t listname_t
     ; Td_add.term config_t listname_t
     ; Td_ls.term config_t listname_t
     ; Td_do.term config_t listname_t
