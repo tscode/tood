@@ -2,7 +2,7 @@ open Types
 
 type pattern = String.t * Str.regexp
 
-let pattern s = (s, Str.regexp (".*" ^ s))
+let pattern s = (s, Str.regexp (".*" ^ Str.quote s))
 let matches_pattern pat str = Str.string_match (snd pat) str 0
 
 (* index to index range! *)

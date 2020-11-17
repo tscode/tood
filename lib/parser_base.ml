@@ -48,13 +48,20 @@ let chainl1 expr op =
 
 (* TODO: take_till that only stops if the char is not escaped *)
 
-let take_till_unescaped = take_till
+let take_till_unescaped_ = take_till
 
-let take_till_unescaped_ f =
+let take_till_unescaped f =
+  let fail_at_end = peek_char >>= function
+    | None -> fail ""
+    | Some c -> match f c with
+      | true -> fail ""
+      | false -> return ()
+  in
   let escaped = char '\\' *> satisfy f >>| Char.escaped in
   let bslash = char '\\' >>| Char.escaped in
-  let block = take_till (fun c -> f c || c = '\\') in
-  lift (String.concat "") (many (escaped <|> bslash <|> block))
+  let block = take_till (fun c -> f c || c = '\\')
+  in
+  lift (String.concat "") (fail_at_end *> (escaped <|> bslash <|> block) |> many)
 
 let take_till_unescaped_char c = take_till_unescaped ((=) c)
 
@@ -62,14 +69,14 @@ let take_all = take_till (function _ -> false)
 
 let quoted c = char c *> take_till_unescaped ((=) c) <* char c
 
+let fail_at_eoi p = p >>= function
+  | "" -> peek_char_fail *> return ""
+  | str -> return str
+
 (* Parser that substitutes placeholders in a string.
  * The placeholder has to consist of a prefix char, like '%', the placeholder
  * char itself, like 'd', and an (optional) postfix char, like "_". A lookup
  * function is used to resolve each valid placholder *)
-
-let fail_at_eoi p = p >>= function
-  | "" -> peek_char_fail *> return ""
-  | str -> return str
 
 let debug head str =
   print_endline (head ^ ": '" ^ str ^ "'"); str
