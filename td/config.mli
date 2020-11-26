@@ -1,4 +1,6 @@
 
+open Tood
+
 exception ParseError of string
 
 type t
@@ -20,8 +22,11 @@ val options_exn : t -> string -> options
 val get : options -> string -> string
 val get_safe : options -> string -> string option
 
-val get_printer : options -> string -> (string -> string)
-val get_printer_safe : options -> string -> (string -> string) option
+val get_printer : options -> string ->
+  (?prio : Entry.priority -> string -> string)
+
+val get_printer_safe : options -> string ->
+  (?prio : Entry.priority -> string -> string) option
 
 val add : options -> string -> string -> (options, string) result
 val merge : options -> options -> options

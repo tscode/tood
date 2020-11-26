@@ -91,21 +91,31 @@ let to_string config =
   in
   List.map collect_options config |> String.concat "\n\n"
 
-let printer_exn str =
-  let style = let open ANSITerminal in function
-  | "black"   -> black   | "on-black"   -> on_black
-  | "red"     -> red     | "on-red"     -> on_red
-  | "green"   -> green   | "on-green"   -> on_green
-  | "yellow"  -> yellow  | "on-yellow"  -> on_yellow
-  | "blue"    -> blue    | "on-blue"    -> on_blue
-  | "magenta" -> magenta | "on-magenta" -> on_magenta
-  | "cyan"    -> cyan    | "on-cyan"    -> on_cyan
-  | "white"   -> white   | "on-white"   -> on_white
-  | "bold"    -> Bold    | "underlined" -> Underlined
-  | str -> raise (ArgumentError str)
+type style =
+  { normal : string list
+  ; low    : string list
+  ; high   : string list }
+
+let style_parser =
+  let open Angstrom in
+  let open Parser in
+  let word = take_while1 is_symbol_char in
+  let words = many (ws *> word <* ws) in
+  let normal = words >>| (fun s -> { normal = s; low = s; high = s}) in
+  let low = char '?' *> words >>| (fun l s -> { s with low = l }) in
+  let high = char '!' *> words >>| (fun h s -> { s with high = h}) in
+  lift2 (List.fold_left (fun s f -> f s)) normal (many (low <|> high))
+
+let printer_exn str ?(prio=Entry.Default) =
+  match Angstrom.(parse_string ~consume:Consume.All style_parser str) with
+  | Error _ -> raise (ArgumentError str)
+  | Ok style ->
+  let codes = match prio with
+  | Entry.High -> List.map Style.parse_code style.high
+  | Entry.Low  -> List.map Style.parse_code style.low
+  | _   -> List.map Style.parse_code style.normal
   in
-  let styles = Str.split (Str.regexp "[ \t]+") str |> List.map style in
-  ANSITerminal.sprintf styles "%s"
+  Style.apply codes
 
 let printer str =
   match printer_exn str with

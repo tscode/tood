@@ -333,7 +333,8 @@ let is_done ~done_index (index, _entry) =
   | 0, _     -> false
   | _, value -> value
 
-let style options _entry = let open Entry in function
+let get_style options entry kind = let open Entry in
+  let style = match kind with
   | Index   -> Config.get_printer options "index-style"
   | Prio    -> Config.get_printer options "prio-style"
   | Text    -> Config.get_printer options "text-style"
@@ -341,6 +342,7 @@ let style options _entry = let open Entry in function
   | Project -> Config.get_printer options "project-style"
   | Context -> Config.get_printer options "context-style"
   | Date    -> Config.get_printer options "date-style"
+  in style ~prio:(prio entry)
 
 let layout_entry ?(offset=0) max_index style fmt entry_fmt entry =
   let str = Entry.format_indexed ~max_index ~style ~fmt entry_fmt entry in
@@ -350,7 +352,7 @@ let layout_entries options layout indexed_entries =
   match Entry.max_index indexed_entries with
   | None -> Log.info_str "no entries to print"
   | Some max_index -> 
-    let style = style options in
+    let style = get_style options in
     match layout with
     | `Flat ->
       let entry_fmt = Config.get options "entry-fmt" in

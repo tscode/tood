@@ -235,6 +235,9 @@ module Parser : sig
 
   type 'a t = 'a Angstrom.t
 
+  val is_symbol_start : char -> bool
+  val is_symbol_char : char -> bool
+
   val ws   : unit t
   val eoil : unit t
 
