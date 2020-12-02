@@ -65,6 +65,11 @@ opam pin git@github.com:tscode/tood.git
 After that, `td` should be accessible from your shell whenever the correct opam
 environment is set.
 
+
+## Configuration
+
+Configuration options are documented under `td init --help`.
+
 ## Usage
 The usage of `td` is fully documented in the help pages of `td` and its
 sub-commands. Currently, it supports the commands `init`, `ls`, `add`, `mod`,
@@ -131,8 +136,6 @@ td sync
 ```
 Executes a custom (synchronization) command that can be specified in the
 configuration file.
-
-## Configuration
 
 ## Caveats
 * A lot of operations are probably not implemented with optimal efficiency at
