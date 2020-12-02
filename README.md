@@ -3,43 +3,57 @@
 Tood is a simple ocaml library for parsing, manipulating, filtering and
 formatting todo list entries. Td is a command line tool that builds on Tood,
 aiming to make it comfortable to manage your todo list on the terminal.
-
-Td maintains two files with human readable todo list entries, one for active
-entries and one for done ones. A typical sequence of `td` interactions might
-look like this:
+A typical sequence of `td` interactions might look like this:
 
 ```bash
+# Initialize td, generating a default config file at ~/.config/td/config
+$ td init
+
 # Append a new task with the context tag 'groceries' to the todo list
 $ td add have to go shopping +groceries 
 
 # Append an important task with context and project tags
-$ td add ! email to my chef +work +projectA/subproject
+$ td add ! email to colleague X +work +project/subproject
+
+# Append a task with date tag
+$ td add make appointment with doctor +health +2021-05-03
 
 # List the active entries
 $ td ls
 1 - have to go shopping +groceries
-2 ! email to my chef +work +projectA/subproject
+2 ! email to colleague +work +project/subproject
+$ - add make appointment with doctor +health +2021-05-03
 
-# Selectively list your entries
+# Selectively list the active entries
 $ td ls +work
-2 ! email to my chef +work +projectA/subproject
+2 ! email to colleague X +work +project/subproject
 
 # Move a task to the file with done entries
 $ td do 2
 
-# List your active and completed tasks
-$ td ls
-1 - have to go shopping +groceries
+# Equivalently, you could have typed
+$ td do +work
+$ td do email
+$ td do !
+$ td do '"colleague X"'
+
+# If your selection matches multiple entries, td by default asks
+# if you are serious about it
+$ td do 1..2
+You are about to mark 2 entries as done. Proceed? [Y/n] n
+info: action aborted
+
+# List the tasks you have completed
 $ td ls --done
-2 ! email to my chef +work +projectA/subproject
+2 ! email to colleague X +work +project/subproject
 ```
 
-Right now, `td` is already useful and (hopefully!) stable.
-The author uses it on a daily basis and plans to maintain and extend it in the
-future. Still, it mainly grew out of an autodidactic impulse to learn ocaml. So
-if you think about using a terminal application to manage your todo list, you
-should at least also have a look at more serious and wholesome efforts, like
-[todo.txt](http://todotxt.org/).
+At the moment, `td` is already useful and stable. The author uses it on a daily
+basis and plans to maintain and extend it in the future. Still, it is mainly the
+product of an autodidactic impulse to improve at ocaml.
+Therefore, if you consider using a terminal application to manage your todo
+list, you should at least also have a look at more serious and wholesome
+efforts, like [todo.txt](http://todotxt.org/).
 
 ## Installation
 Currently, installation by [opam](https://opam.ocaml.org/) is the only supported
@@ -52,23 +66,23 @@ After that, `td` should be accessible from your shell whenever the correct opam
 environment is set.
 
 ## Usage
-The usage of `td` is comprehensively documented in the help pages of `td` and
-its commands `init`, `ls`, `add`, `mod`, `do`, `undo`, `rm`, and `sync`. The
-following description has a more annecdotal character and leaves out many
-differences.
+The usage of `td` is fully documented in the help pages of `td` and its
+sub-commands. Currently, it supports the commands `init`, `ls`, `add`, `mod`,
+`do`, `undo`, `rm`, `sort`, `lists`, and `sync`. When in doubt, type
+`td --help` and `td init --help` to get some explanations how `td` works.
 
 ```
 td init
 ```
-can be used to generate a default `td` configuration file (at
-`~/.config/td/conf` by default). It will ask you for the location of the files
-for active and completed entries. Configuration options are documented under `td
-init --help`.
+Generates a default configuration file at the path `~/.config/td/config` or
+`$TD_CONFIG`, if defined. It will ask you for the name of the default todo list
+and the location of the todo- and done-files that are used for managing the
+default list.
 
 ```
 td add [prio] task text [tags...]
 ```
-adds a new task to your (active) todo list. The optional argument `[prio]` is
+Adds a new task to your todo list. The optional argument `[prio]` is
 the priority of the task and can be `?`, `-`, or `!` for 'low', 'medium', or
 'high'. The argument `[tags...]` is a space separated list of tags. Tood
 supports context tags (like `+cooking`), project tags containing `/`
@@ -77,47 +91,54 @@ supports context tags (like `+cooking`), project tags containing `/`
 ```
 td ls [filter]
 ```
-lists your todo list as a flat list. The format of the printed entries is
-configurable. By the flag `--tree` the entries can be listed as project tree.
-The `filter` determines which entries are printed. It can be anything from
-an index or content substring to a tag or even a date range. Also, logical
-operations to negate or combine filters by `not`, `and` and `or` are supported.
-See `td init --help` for more documentation.
+Lists the entries of your todo list. The format of the entries when printing is
+configurable. The argument `filter` determines which entries are printed.
+Logical operations to negate or combine filters by `not`, `and` and `or` are
+supported. See `td init --help` for more documentation about filters.
 
 ```
 td mod filter [prio] [task text] [tag modifications...]
 ```
-modifies selected tasks. You can change the priority, the task text, add tags
-(e.g., `+newtag`), or remove tags (`~oldtag`). The order in which the
-modifications are provided is not important (except that later mods override
-earlier ones if they address the same priority / text / tag).
+Modifies selected entries. You can change the priority or the task text or add
+/ remove tags (e.g., via `+tobeadded` or `~toberemoved`). The order in which the
+modifications are provided is not important, except that later mods override
+earlier ones.
 
 ```
 td do filter
 td undo filter
 ```
-move selected tasks to / from the done-file that stores the completed entries.
+Move selected entries to / from the done-file.
 
 ```
 td rm filter
 ```
-removes selected tasks from the todo file (or its done counterpart if `--done`
-is provided).
+Removes selected entries from the todo list.
+
+```
+td sort [order]
+```
+Sorts the entries in the todo list according to different properties, like the
+priority or the tags.
+
+```
+td lists
+```
+Prints all todo lists that are managed in the active configuration.
 
 ```
 td sync
 ```
-executes a custom (synchronization) command that can be specified in the
-configuration file of `td`.
+Executes a custom (synchronization) command that can be specified in the
+configuration file.
+
+## Configuration
 
 ## Caveats
-* Due to the usage of the `Base` and `Core` libraries, the `td` binary is
-  extremely large (>10 Mb!). I didn't anticipate this bloat. Eventually, this
-  will be mended by bypassing first `Core` and then `Base`.
-* A lot of things are not done terribly efficiently at the moment. Still, with
-  a fast SSD drive, even todo lists with 10,000 entries appear to be
-  maintainable with an acceptable performance (of about 1 second per usual td
-  command) in testes.
-* Td is only regularly used by very few people and might contain surprising
-  bugs. So don't be shocked if it gets hungry and eats your todo lists alive.
+* A lot of operations are probably not implemented with optimal efficiency at
+  the moment. Still, with a fast SSD todo lists with ~10,000 entries appear to
+  be maintainable with an acceptable performance (of about 0.5 seconds per usual
+  td command).
+* Td is used by very few people and might contain surprising bugs. So don't be
+  shocked if it gets hungry and eats your todo lists alive.
 
