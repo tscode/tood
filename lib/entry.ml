@@ -230,3 +230,37 @@ let of_string_strict_exn str =
 let format         = P.format
 let format_indexed = P.format_indexed
 
+(* Sorting *)
+
+let compare_lists compare l l' = match l, l' with
+  | [], [] -> 0
+  | _, [] -> 1
+  | [], _ -> -1
+  | h :: _, h' :: _ -> compare h h'
+
+let compare_by_part part (i, entry) (i', entry') =
+  match part with
+  | Index -> compare i i'
+  | Prio  -> compare (prio entry) (prio entry')
+  | Text  -> compare (text entry) (text entry')
+  | Date  -> compare_lists Date.compare (due_tags entry) (due_tags entry')
+  | Tag -> compare_lists compare (tags entry) (tags entry')
+  | Context -> compare_lists compare (context_tags entry) (context_tags entry')
+  | Project ->
+    let compare l l' = compare_lists compare l l' in
+    compare_lists compare (project_tags entry) (project_tags entry')
+
+let rec compare_by_parts parts x y = match parts with
+  | [] -> 0
+  | (part, invert) :: t ->
+  match compare_by_part part x y with
+  | 0 -> compare_by_parts t x y
+  | value -> if invert then (-value) else value
+
+let sort_indexed parts = List.sort (compare_by_parts parts)
+
+let sort parts l =
+  List.map (fun entry -> (-1, entry)) l
+  |> sort_indexed parts
+  |> List.map snd
+

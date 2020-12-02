@@ -87,6 +87,91 @@ let move ?(f=fun x -> x) ?summary ?prompt filter from_path to_path =
     let sel = List.map (fun (i, x) -> (i, f x)) sel in
     write_list ~append:true (Entry.deindex sel) to_path
 
+let parse_order str =
+  let open Angstrom in
+  let open Parser in
+  let word a b = string a *> return b in
+  let part = choice
+    [ word "index" Entry.Index
+    ; word "prio" Entry.Prio
+    ; word "text" Entry.Text
+    ; word "date" Entry.Date
+    ; word "context" Entry.Context
+    ; word "project" Entry.Project ]
+  in
+  let may_invert opt part = match opt with
+  | None -> part, false
+  | Some _ -> part, true
+  in
+  let word = lift2 may_invert (opt (char '~')) part in
+  let parser = sep_by (char ',') word in
+  match parse_string ~consume:Consume.All parser str with
+  | Ok parts -> parts
+  | Error _ -> raise (ArgumentError (sprintf "invalid order argument '%s'" str))
+
+end
+
+module Common_terms = struct
+
+open Cmdliner
+
+let quiet_flag =
+  let doc = "Suppress information output." in
+  Arg.(value & flag & info ["q"; "quiet"] ~doc)
+
+let verbose_flag =
+  let doc = "Show additional information." in
+  Arg.(value & flag & info ["v"; "verbose"] ~doc)
+
+let noprompt_flag =
+  let doc = "Suppress confirmation prompt if several entries are selected." in
+  Arg.(value & flag & info ["n"; "noprompt"] ~doc)
+
+let filter ~optional =
+  let op = if optional then Arg.value else Arg.non_empty in
+  Arg.(op & pos_all string [] & info [] ~docv:"FILTER")
+  |> Term.(app (const (String.concat " ")))
+
+let source_all =
+  let doc   = "Operate on the todo-file (default)." in
+  let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
+  let doc   = "Operate on the done-file." in
+  let done' = `Done, Arg.info ["d"; "done"] ~doc in
+  let doc   = "Operate on both the todo-file and done-file files." in
+  let all'  = `All, Arg.info ["a"; "all"] ~doc in
+  Arg.(value & vflag `Todo [todo'; done'; all'])
+
+let source =
+  let doc   = "Operate on the todo-file (default)." in
+  let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
+  let doc   = "Operate on the done-file." in
+  let done' = `Done, Arg.info ["d"; "done"] ~doc in
+  Arg.(value & vflag `Todo [todo'; done'])
+
+let order ~optional =
+  let order = function
+    | "none" -> Ok None
+    | arg    ->
+    match Util.parse_order arg with
+    | ord -> Ok (Some ord)
+    | exception ArgumentError err -> Error (`Msg err)
+  in
+  let doc = "Ordering of the printed entries. Must be a comma separated
+    list of keywords. Allowed keywords are $(b,index), $(b,prio), $(b,text),
+    $(b,context), $(b,project), $(b,date). The character $(b,~) may be
+    prepended to a keyword to invert the order. For example, the argument
+    'prio,~date,project' first sorts according to priority (higher wins),
+    then according to the first date tag (later dates win due to the
+    inversion), and finally according to the first project tag
+    (in alphabetic order)."
+  in
+  let docv = "ORDER" in
+  let value = match optional with
+  | true -> Arg.(value & opt string "none" & info ["o"; "order"] ~docv ~doc)
+  | false -> Arg.(value & pos 0 string "none" & info [] ~docv ~doc)
+  in
+  Term.(app (const order)) value |> Term.term_result
+
 end
 
 module Td_init = struct
@@ -263,10 +348,7 @@ let man =
   ; formatting ]
 
 let term config_t listname_t =
-  let quiet_t =
-    let doc = "Suppress informative output of the command." in
-    Arg.(value & flag & info ["q"; "quiet"] ~doc)
-  in
+  let quiet_t = Common_terms.quiet_flag in
   let doc = "initialize a configuration file" in
   Term.(const cmd $ config_t $ listname_t $ quiet_t),
   Term.info "init" ~doc ~sdocs:Manpage.s_common_options ~man
@@ -308,20 +390,14 @@ let man = [
   on the other hand, are only used for listing / printing."
 ]
 
+let entry_t =
+  Arg.(non_empty & pos_all string [] & info [] ~docv:"ENTRY")
+  |> Term.(app (const (String.concat " ")))
+
 let term config_t listname_t =
-  let target_t =
-    let doc   = "Add entry to todo-file (default)." in
-    let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "Add entry to done-file." in
-    let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    Arg.(value & vflag `Todo [todo'; done'])
-  in
-  let entry_t =
-    Arg.(non_empty & pos_all string [] & info [] ~docv:"ENTRY")
-    |> Term.(app (const (String.concat " ")))
-  in
+  let source_t = Common_terms.source in
   let doc = "create new entries" in
-  Term.(const cmd $ config_t $ listname_t $ target_t $ entry_t),
+  Term.(const cmd $ config_t $ listname_t $ source_t $ entry_t),
   Term.info "add" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -378,25 +454,26 @@ let layout_entries options layout indexed_entries =
       in
       Tree.collect ~fname f tree |> List.tl |> String.concat "\n"
 
-(*TODO*)
-let sort_entries sort indexed_entries = match sort with
-  | `None -> indexed_entries
+let sort_entries order entries =
+  match order with
+  | None -> entries
+  | Some order -> Entry.sort_indexed order entries
 
 let cmd' options _listname source order layout filter =
   let fmt = Config.get options "date-fmt" |> Date.fmt_exn in
   let sel = Filter.of_string_exn ~fmt filter in
   let entries = match source with
-    | `Todo -> Util.parse_list (Config.get options "todo-path")
-    | `Done -> Util.parse_list (Config.get options "done-path")
-    | `All  -> 
-      Util.parse_list (Config.get options "todo-path")
-      @ Util.parse_list (Config.get options "done-path")
-    in
-    Entry.index entries
-    |> Filter.filter_indexed sel
-    |> sort_entries order
-    |> layout_entries options layout
-    |> print_endline
+  | `Todo -> Util.parse_list (Config.get options "todo-path")
+  | `Done -> Util.parse_list (Config.get options "done-path")
+  | `All  -> 
+    Util.parse_list (Config.get options "todo-path")
+    @ Util.parse_list (Config.get options "done-path")
+  in
+  Entry.index entries
+  |> Filter.filter_indexed sel
+  |> sort_entries order
+  |> layout_entries options layout
+  |> print_endline
 
 let cmd config listname source order layout filter =
   Util.wrap config listname (fun o l -> cmd' o l source order layout filter)
@@ -410,41 +487,58 @@ let man = [
   --tree is provided) determine how the entry is formatted."
 ]
 
+let layout_t =
+  let doc   = "List entries as flat list (default)." in
+  let flat' = `Flat, Arg.info ["flat"] ~doc in
+  let doc   = "List entries as project tree." in
+  let tree' = `Tree, Arg.info ["tree"] ~doc in
+  Arg.(value & vflag `Flat [flat'; tree'])
+
 let term config_t listname_t =
   let doc = "list entries" in
-  let filter_t =
-    Arg.(value & pos_all string [] & info [] ~docv:"FILTER")
-    |> Term.(app (const (String.concat " ")))
-  in
-  let source_t =
-    let doc   = "List entries from the todo-file file (default)." in
-    let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "List entries from the done-file file." in
-    let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    let doc   = "List entries from both the todo-file and done-file files." in
-    let all'  = `All, Arg.info ["a"; "all"] ~doc in
-    Arg.(value & vflag `Todo [todo'; done'; all'])
-  in
-  let layout_t =
-    let doc   = "List entries as flat list (default)." in
-    let flat' = `Flat, Arg.info ["flat"] ~doc in
-    let doc   = "List entries as project tree." in
-    let tree' = `Tree, Arg.info ["tree"] ~doc in
-    Arg.(value & vflag `Flat [flat'; tree'])
-  in
-  let order_t =
-    let order = function
-      | "none" -> `None
-      | arg    -> raise (Invalid_argument arg)
-    in
-    let doc = "Ordering of the printed entries. Must be one of none, .... " in
-    Arg.(value & opt string "none" & info ["o"; "order"] ~docv:"ORDER" ~doc)
-    |> Term.(app (const order))
-  in
+  let filter_t = Common_terms.filter ~optional:true in
+  let source_t = Common_terms.source_all in
+  let order_t  = Common_terms.order ~optional:true in
   Term.(const cmd $ config_t $ listname_t $ source_t
                     $ order_t $ layout_t $ filter_t),
   Term.info "ls" ~doc ~sdocs:Manpage.s_common_options ~man
 
+end
+
+module Td_sort = struct
+
+let cmd' options _listname source order =
+  let paths = match source with
+  | `Todo -> [Config.get options "todo-path"]
+  | `Done -> [Config.get options "done-path"]
+  | `All -> List.map (Config.get options) ["todo-path"; "done-path"]
+  in
+  let reorder path =
+    let entries = Util.parse_list path
+    |> Entry.index
+    |> Td_ls.sort_entries order
+    in
+    Util.write_list (Entry.deindex entries) path
+  in
+  List.iter reorder paths
+  
+let cmd config listname source order =
+  Util.wrap config listname (fun o l -> cmd' o l source order)
+
+open Cmdliner
+
+let man = [
+  `S Manpage.s_description;
+  `P "Sort entries in todo-file and/or done-file according to a specified
+  order."
+]
+
+let term config_t listname_t =
+  let doc = "sort entries" in
+  let source_t = Common_terms.source_all in
+  let order_t  = Common_terms.order ~optional:false in
+  Term.(const cmd $ config_t $ listname_t $ source_t $ order_t),
+  Term.info "sort" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
 
@@ -486,27 +580,17 @@ let man = [
   The syntax for filters is documented at $(b,td init --help)."
 ]
 
-let filter_t =
-  let doc = "Filter used to select entries." in
-  Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER")
-  |> Term.(app (const (String.concat " ")))
-
-let verbose_t =
-  let doc = "List selected entries." in
-  Arg.(value & flag & info ["v"; "verbose"] ~doc)
-
-let noprompt_t =
-  let doc = "Suppress confirmation prompt if more than 1 entry is selected." in
-  Arg.(value & flag & info ["n"; "noprompt"] ~doc)
+let failed_t   =
+  let doc = "Add the tag +failed when moving the selected entries." in
+  Arg.(value & flag & info ["f"; "failed"] ~doc)
 
 let term config_t listname_t =
-  let failed_t =
-    let doc = "Add the tag +failed when moving the selected entries." in
-    Arg.(value & flag & info ["f"; "failed"] ~doc)
-  in
   let doc = "mark entries as done" in
+  let filter_t   = Common_terms.filter ~optional:false in
+  let verbose_t  = Common_terms.verbose_flag in
+  let noprompt_t = Common_terms.noprompt_flag in
   Term.(const cmd $ config_t $ listname_t $ verbose_t
-                    $ noprompt_t $ failed_t $ filter_t),
+                  $ noprompt_t $ failed_t $ filter_t),
   Term.info "do" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -539,8 +623,10 @@ let man = [
 
 let term config_t listname_t =
   let doc = "mark entries as undone" in
-  Term.(const cmd $ config_t $ listname_t
-                  $ Td_do.verbose_t $ Td_do.noprompt_t $ Td_do.filter_t),
+  let verbose_t  = Common_terms.verbose_flag in
+  let noprompt_t = Common_terms.noprompt_flag in
+  let filter_t = Common_terms.filter ~optional:false in
+  Term.(const cmd $ config_t $ listname_t $ verbose_t $ noprompt_t $ filter_t),
   Term.info "undo" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -579,16 +665,13 @@ let man = [
 ]
  
 let term config_t listname_t =
-  let source_t =
-    let doc   = "Remove entries from the todo-file (default)." in
-    let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "Remove entries from the done-file file." in
-    let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    Arg.(value & vflag `Todo [todo'; done'])
-  in
   let doc = "remove entries" in
-  Term.(const cmd $ config_t $ listname_t $ Td_do.verbose_t
-                  $ Td_do.noprompt_t $ source_t $ Td_do.filter_t),
+  let source_t   = Common_terms.source in
+  let filter_t   = Common_terms.filter ~optional:false in
+  let verbose_t  = Common_terms.verbose_flag in
+  let noprompt_t = Common_terms.noprompt_flag in
+  Term.(const cmd $ config_t $ listname_t $ verbose_t
+                  $ noprompt_t $ source_t $ filter_t),
   Term.info "rm" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -679,25 +762,21 @@ let man = [
   `P "td mod 7 ! +tobeadded";
 ]
 
+let filter_mod_t =
+  let doc =
+    "Filter to select the entries to be modified and (space separated) list
+    of modifications."
+  in
+  Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MODS")
+  |> Term.(app (const (String.concat " ")))
+
 let term config_t listname_t =
-  let source_t =
-    let doc   = "Modify entries in todo-file (default)." in
-    let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
-    let doc   = "Modify entries in done-file." in
-    let done' = `Done, Arg.info ["d"; "done"] ~doc in
-    Arg.(value & vflag `Todo [todo'; done'])
-  in
-  let filter_mod_t =
-    let doc =
-      "Filter to select the entries to be modified and (space separated) list
-      of modifications."
-    in
-    Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MODS")
-    |> Term.(app (const (String.concat " ")))
-  in
+  let source_t = Common_terms.source in
+  let verbose_t = Common_terms.verbose_flag in
+  let noprompt_t = Common_terms.noprompt_flag in
   let doc = "modify entries" in
-  Term.(const cmd $ config_t $ listname_t $ Td_do.noprompt_t
-                     $ Td_do.verbose_t $ source_t $ filter_mod_t),
+  Term.(const cmd $ config_t $ listname_t $ noprompt_t
+                  $ verbose_t $ source_t $ filter_mod_t),
   Term.info "mod" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -759,7 +838,7 @@ let man = [
   `P "Summarize the todo lists that are currently maintained. It prints the list
   name as well as the number of undone/done entries. The first name printed
   is the default list.
-  To apply a td command to a different list, run $(b,td [cmd] -l [listname]
+  To apply a td command to a specific list, run $(b,td [cmd] -l [listname]
   ...)"
 ]
 
@@ -813,21 +892,22 @@ let default_cmd =
   let doc = "simple but functional todo list management on the terminal" in
   let sdocs = Manpage.s_common_options in
   let exits = Term.default_exits in
-  let default_ls config = Td_ls.cmd config "" `Todo `None `Flat "<true>" in
+  let default_ls config = Td_ls.cmd config "" `Todo None `Flat "<true>" in
   Term.(const default_ls $ config_t),
   Term.info "td" ~version:_version ~doc ~sdocs ~exits ~man
 
 let () = 
   let commands = [
-      Td_init.term config_t listname_t
-    ; Td_lists.term config_t listname_t
-    ; Td_add.term config_t listname_t
-    ; Td_ls.term config_t listname_t
-    ; Td_do.term config_t listname_t
-    ; Td_undo.term config_t listname_t
-    ; Td_rm.term config_t listname_t
-    ; Td_mod.term config_t listname_t
-    ; Td_sync.term config_t listname_t
+      Td_lists.term config_t listname_t
+    ; Td_sort.term  config_t listname_t
+    ; Td_sync.term  config_t listname_t
+    ; Td_undo.term  config_t listname_t
+    ; Td_init.term  config_t listname_t
+    ; Td_mod.term   config_t listname_t
+    ; Td_add.term   config_t listname_t
+    ; Td_ls.term    config_t listname_t
+    ; Td_do.term    config_t listname_t
+    ; Td_rm.term    config_t listname_t
   ] in
   Term.(exit @@ eval_choice default_cmd commands)
 

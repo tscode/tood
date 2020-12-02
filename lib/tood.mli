@@ -131,6 +131,11 @@ module Entry : sig
     ?max_index : int -> 
     ?sep       : string -> string -> int * t -> string
 
+  (* Entry sorting *)
+
+  val sort : (part * bool) list -> t list -> t list
+  val sort_indexed : (part * bool) list -> (int * t) list -> (int * t) list
+
 end
 
 module Filter : sig
