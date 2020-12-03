@@ -1,7 +1,7 @@
 # Td and Tood
 
 Tood is a simple ocaml library for parsing, manipulating, filtering and
-formatting todo list entries. Td is a command line tool that builds on Tood,
+formatting todo list entries. Td is a command line tool that builds upon Tood,
 aiming to make it comfortable to manage your todo list on the terminal.
 A typical sequence of `td` interactions might look like this:
 
@@ -48,7 +48,7 @@ $ td ls --done
 2 ! email to colleague X +work +project/subproject
 ```
 
-At the moment, `td` is already useful and stable. The author uses it on a daily
+This project is currently useable and stable. The author relies on it on a daily
 basis and plans to maintain and extend it in the future. Still, it is mainly the
 product of an autodidactic impulse to improve at ocaml.
 Therefore, if you consider using a terminal application to manage your todo

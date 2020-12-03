@@ -1,7 +1,7 @@
 open Tood
 open Printf
 
-let _version = "0.1"
+let _version = "0.1dev"
 
 exception NotImplemented of string
 
@@ -133,20 +133,16 @@ let filter ~optional =
   |> Term.(app (const (String.concat " ")))
 
 let source_all =
-  let doc   = "Operate on the todo-file (default)." in
-  let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
   let doc   = "Operate on the done-file." in
   let done' = `Done, Arg.info ["d"; "done"] ~doc in
-  let doc   = "Operate on both the todo-file and done-file files." in
+  let doc   = "Operate on both the todo- and done-file." in
   let all'  = `All, Arg.info ["a"; "all"] ~doc in
-  Arg.(value & vflag `Todo [todo'; done'; all'])
+  Arg.(value & vflag `Todo [done'; all'])
 
 let source =
-  let doc   = "Operate on the todo-file (default)." in
-  let todo' = `Todo, Arg.info ["t"; "todo"] ~doc in
   let doc   = "Operate on the done-file." in
   let done' = `Done, Arg.info ["d"; "done"] ~doc in
-  Arg.(value & vflag `Todo [todo'; done'])
+  Arg.(value & vflag `Todo [done'])
 
 let order ~optional =
   let order = function
@@ -156,14 +152,13 @@ let order ~optional =
     | ord -> Ok (Some ord)
     | exception ArgumentError err -> Error (`Msg err)
   in
-  let doc = "Ordering of the printed entries. Must be a comma separated
-    list of keywords. Allowed keywords are $(b,index), $(b,prio), $(b,text),
-    $(b,context), $(b,project), $(b,date). The character $(b,~) may be
-    prepended to a keyword to invert the order. For example, the argument
-    'prio,~date,project' first sorts according to priority (higher wins),
-    then according to the first date tag (later dates win due to the
-    inversion), and finally according to the first project tag
-    (in alphabetic order)."
+  let doc = "Ordering of the entries. Must be a comma separated list of
+  keywords. Allowed keywords are $(b,index), $(b,prio), $(b,text), $(b,context),
+  $(b,project), $(b,date). The character $(b,~) may be prepended to a keyword to
+  invert the order. For example, the argument 'prio,~date,project' first sorts
+  according to priority (higher wins), then according to the first date tag
+  (later dates win due to the inversion), and finally according to the first
+  project tag (in alphabetic order)."
   in
   let docv = "ORDER" in
   let value = match optional with
@@ -257,57 +252,87 @@ let man =
   in
   let date_placeholders =
     [ `P "$(b,%y) : year"
-    ; `P "$(b,%m) : month in the current year"
-    ; `P "$(b,%d) : day in the current month" ]
+    ; `P "$(b,%M) : month in the current year"
+    ; `P "$(b,%m) : month in the current year (always two digits)"
+    ; `P "$(b,%D) : day in the current month"
+    ; `P "$(b,%d) : day in the current month (always two digits)" ]
+  in
+  let config_options =
+    [ `P "- $(b,todo-path) : file where active todo entries are stored"
+    ; `P "- $(b,done-path) : file where done todo entries are stored"
+    ; `P "- $(b,entry-fmt) : entry format when printing / listing"
+    ; `P "- $(b,entry-fmt-tree): entry format when printing in tree layout"
+    ; `P "- $(b,date-fmt) : date format used for printing $(b,and) parsing"
+    ; `P "- $(b,sync-cmd) : shell command called when executing $(b,td sync)" ]
+  in
+  let style_options =
+    [ `P "- $(b,index-style)   : style of the index number"
+    ; `P "- $(b,prio-style)    : style of the priority character"
+    ; `P "- $(b,text-style)    : style of the entry text"
+    ; `P "- $(b,tag-style)     : style of any tags"
+    ; `P "- $(b,project-style) : style of project tags"
+    ; `P "- $(b,context-style) : style of context tags"
+    ; `P "- $(b,date-style)    : style of date tags" ]
   in
   let description = [
   `S Manpage.s_description;
-  `P "Initializes the td configuration file with default options (if it does not
-  already exist at the config path) and touches the specified todo and done
-  files in order to make sure that they can be accessed. The configuration
-  path is '~/config/td/config' by default, but can be overwritten by the
-  environment variable $(b,TD_CONFIG) or by providing the command line argument
-  $(b,--config).";
-  `P "On invokation, general information about the usage of td is
-  printed unless the flag $(b,--quiet) is provided."
+  `P "Generates a td configuration file with default options (if it does not
+  already exist) and touches the specified todo- and done-files, checking if
+  they can be accessed. The default path of the configuration file is
+  $(b,~/config/td/config). This can be overwritten by setting the environment
+  variable $(b,TD_CONFIG) or by providing the command line argument
+  $(b,--config)."
   ]
   in
   let configuration = [
   `S "CONFIGURATION";
   `P "The td configuration file defaults to $(b,~/.config/td/config) unless
-  the environment variable TOOD_CONFIG is defined. It can also be specified
-  explicitly by the $(b,--config) option for all subcommands of td.";
-  `P "The syntax for lines in the configuration file is $(b,KEY : VALUE).
-  The following keys can be specified:";
-  `P "- todo_path : file where all active todo entries are stored";
-  `Noblank; `P "- $(b,done-path) : file where all completed entries are stored";
-  `Noblank; `P "- $(b,entry-fmt) : format of entries when printing / listing";
-  `Noblank; `P "- $(b,entry-fmt-tree) : entry format when printing in tree format";
-  `Noblank; `P "- $(b,date-fmt) : date format that is used for printing and parsing";
-  `Noblank; `P "- $(b,sync-cmd) : shell command called when executing $(b,td sync)";
-  `P "Format variables that can be used in the format strings are documented in
-  the section FORMATTING."
-  ]
+  the environment variable $(b,TOOD_CONFIG) is defined. It can also be specified
+  on invocation by the $(b,--config) option for all subcommands.";
+  `P "Each line in the configuration file must either be a $(b,LISTNAME) or a
+  pair $(b,KEY : VALUE). Listnames and keys may only contain the characters
+  'a-z|A-Z|0-9|-|_'. Each listname opens a new section in the configuration
+  file, with options that apply to the corresponding list exclusively.
+  General options that apply to all lists (unless overwritten) can be put in the
+  top of the configuration file.";
+  `P "The following keys are accepted:";
+  ] @ config_options @ [
+  `P "The placeholders to be used in format strings are documented in the
+  section $(b,FORMATTING) below.";
+  `P "It is also possible to specify the style (e.g., color or boldness) of
+  different parts of an entry when printing them to an ANSI-compliant terminal.
+  A valid style consists of a space-separated list of one of the properties
+  $(b,bold), $(b,dim), $(b,underlined), $(b,blink), $(b,COLOR), or
+  $(b,on-COLOR). The value $(b,COLOR) can either be a string (like 'white',
+  'yellow', or 'light-cyan') for one of the standart 16 ANSI colors, or it can
+  be a number corresponding to the code of a 256 ANSI color.
+  If the style should only apply for entries of high / low priority, the
+  characters $(b,!) and $(b,?) can be used. An examplary style value would be";
+  `P "  blue ! bold red on-green ? underlined grey";
+  `P "which would mean: blue foreground color if the priority is normal; bold
+  font with red foreground and green background if the priority is high;
+  underlined font with grey foreground if the priority is low.";
+  `P "The following styles can be set:"
+  ] @ style_options
   in
   let entries = [
   `S "ENTRIES";
-  `P "Todo entries in the tood format consist of three parts: the actual text, a
-  priority and a list of tags. Its textual representation is";
+  `P "Entries consist of three parts: a priority, the actual entry text, and a
+  list of tags. Its textual representation is";
   `P "PRIORITY TEXT TAG1 TAG2...";
   `P "The priority can be low, middle, or high and is represented by the
-  characters '?', '-', and '!'. The text representation of tags always starts
-  with a '+'. Tags come in three flavors: context tags (like '+work'), project
-  tags that contain at least one '/' (like '+project/' or
+  characters $(b,?), $(b,-), and $(b,!). Tags always start with the character
+  $(b,+) and come in three flavors: context tags (like '+work'), project
+  tags that contain at least one $(b,/) (like '+project/' or
   '+project/subproject'), and date tags (like '+2020-05-12'). Note that td
-  always uses the date format '%y-%m-%d' for storage, while custom date
-  formats for user interaction can be specified in the config file.
-  Examples for valid tood entries are:";
+  uses the date format $(b,%y-%m-%d) for storage, while custom date formats
+  for user interaction can be specified in the config file. Examples for valid
+  tood entries are:";
   `P "- this entry is moderately important +example +tood/documentation";
-  `Noblank; `P "! this entry is important +and/has/many/subprojects";
+  `Noblank; `P "! this entry is important +and/has/many/subprojects +2005-08-10";
   `P "Entries can be equipped with an arbitrary number fo tags. Due to the
-  significance of the character '+' for tags, the text of entries can currently
-  not contain this symbol."
-  ]
+  significance of the character $(b,+), the text of entries can currently not
+  contain this symbol." ]
   in
   let filters = [
   `S "FILTERS";
@@ -482,17 +507,15 @@ open Cmdliner
 
 let man = [
   `S Manpage.s_description;
-  `P "List selected entries from todo-file or done-file with custom formatting
-  and style. The configuration options entry-fmt and entry-fmt-tree (if the flag
-  --tree is provided) determine how the entry is formatted."
+  `P "List selected entries from the todo- or done-file. The configuration
+  options entry-fmt and entry-fmt-tree (if the flag --tree is provided)
+  determine how the entries are formatted."
 ]
 
 let layout_t =
-  let doc   = "List entries as flat list (default)." in
-  let flat' = `Flat, Arg.info ["flat"] ~doc in
   let doc   = "List entries as project tree." in
-  let tree' = `Tree, Arg.info ["tree"] ~doc in
-  Arg.(value & vflag `Flat [flat'; tree'])
+  let tree' = `Tree, Arg.info ["t"; "tree"] ~doc in
+  Arg.(value & vflag `Flat [tree'])
 
 let term config_t listname_t =
   let doc = "list entries" in
@@ -575,9 +598,9 @@ open Cmdliner
 let man = [
   `S Manpage.s_description;
   `P "Parses the positional command line arguments as filter and moves the
-  selected entries from the configured todo-file to done-file. A confirmation
-  prompt is displayed if more than one entry is selected (see -n, --noprompt).
-  The syntax for filters is documented at $(b,td init --help)."
+  selected entries from the configured todo- to the done-file. By default, a
+  confirmation prompt is displayed if more than one entry is selected. The
+  syntax for filters is documented under $(b,td init --help)."
 ]
 
 let failed_t   =
@@ -616,9 +639,9 @@ open Cmdliner
 let man = [
   `S Manpage.s_description;
   `P "Parses the positional command line arguments as filter and moves the
-  selected entries from the configured done-file to todo-file. A confirmation
-  prompt is displayed if more than one entry is selected (see -n, --noprompt).
-  The syntax for filters is documented at $(b,td init --help)."
+  selected entries from the configured done- to the todo-file. By default, a
+  confirmation prompt is displayed if more than one entry is selected. The
+  syntax for filters is documented under $(b,td init --help)."
 ]
 
 let term config_t listname_t =
@@ -659,9 +682,9 @@ open Cmdliner
 let man = [
   `S Manpage.s_description;
   `P "Parses the positional command line arguments as filter and removes the
-  selected entries from the configured todo-file or done-file. A confirmation
-  prompt is displayed if more than one entry is selected (see -n, --noprompt).
-  The syntax for filters is documented at $(b,td init --help)."
+  selected entries from the configured todo- or done-file. By default, a
+  confirmation prompt is displayed if more than one entry is selected. The
+  syntax for filters is documented under $(b,td init --help)."
 ]
  
 let term config_t listname_t =
@@ -742,12 +765,11 @@ open Cmdliner
 
 let man = [
   `S Manpage.s_description;
-  `P "Modify an entry or a selection of entries. It is possible to change
-  the priority or the text of an entry, as well as to add or remove tags.
-  If more than one entry is modified, a confirmation prompt is displayed (see
-  -n, --noprompt). The syntax for the arguments of $(b,td mod) is";
+  `P "Modify an entry or a selection of entries. By default, if more than one
+  entry is modified, a confirmation prompt is displayed. The syntax for the
+  arguments of $(b,td mod) is";
   `P "filter mod1 [mod2 mod3...]";
-  `P "where each modification can have the form (with | denoting choices)";
+  `P "where each modification can have the form (with '|' denoting choices)";
   `P "? | - | ! | \"TEXT\" | +TAG | ~TAG";
   `P "Note that replacement text has to be quoted with '\"' and removing tags
   requires prepending '~' instead of '+' to the tag. The syntax for filters and
@@ -764,8 +786,9 @@ let man = [
 
 let filter_mod_t =
   let doc =
-    "Filter to select the entries to be modified and (space separated) list
-    of modifications."
+    "Filter to select the entries to be modified and (space separated) list of
+    modifications. See $(b,td init --help) for documentation of the filter
+    syntax"
   in
   Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MODS")
   |> Term.(app (const (String.concat " ")))
@@ -780,7 +803,6 @@ let term config_t listname_t =
   Term.info "mod" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
-
 
 module Td_sync = struct
 
@@ -810,7 +832,6 @@ let term config_t listname_t =
   Term.info "sync" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
-
 
 module Td_lists = struct
 
@@ -862,29 +883,28 @@ let config_t =
   Term.(const Config.parse_file $ path)
 
 let listname_t =
-  let doc = "Todo list to be used. Different lists can be managed in dedicated
-  sections of the configuration file; see $(b,td init --help) for
+  let doc = "Todo list to operate on. Different lists can be managed in
+  dedicated sections of the configuration file. See $(b,td init --help) for
   documentation." in
   Arg.(value & opt string "" & info ["l"; "list"] ~doc ~docv:"LIST-NAME")
 
 let man = [
   `S Manpage.s_description;
-  `P "Td is a command line tool with which you can manipulate and display todo
-  lists. Td offers commands to create, modify, remove, and selectively print
-  list entries and it stores its data in a simple and human readable format.
-  The format supports context, project, and date tags, which allow for flexible
-  filtering and sorting operations.";
+  `P "Td is a command line tool to manipulate and display todo lists. It can
+  create, modify, remove, and selectively print list entries and supports
+  context-, project-, and date-tags, allowing flexible filtering and sorting
+  operations. All data is stored in a simple human readible text format.";
   `P "To get started, run $(b,td init). This will generate a configuration
   file with default options at $(b,~/.config/td/config) (or at the path pointed
   to by the environment variable $(b,TD_CONFIG)). It will also generate a
   default todo list. Each todo list consists of two files, which are used to
   store active (unfinished) and done (finished) entries. The former is refered
   to as todo-file and the latter as done-file throughout this documentation.
-  Alternatively, you can also create a configuration file by hand
-  and run $(b,td init) afterwards, which then only touches the todo and done
-  files that are specified.";
+  Alternatively, you can also create a configuration file by hand and run $(b,td
+  init) afterwards. This will verify your configuration and touch the specified
+  todo- and done-files.";
   `P "Documentation of the configuration options as well as various features,
-  like filtering, formatting, and tagging, can be found via $(b,td init
+  including filtering, formatting, and tagging, can be found under $(b,td init
   --help).";
 ]
 
