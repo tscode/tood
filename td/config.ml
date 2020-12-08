@@ -17,6 +17,7 @@ let fallback_options =
   |> Dict.add "entry-fmt" "%J %r %s %p_%c_%d"
   |> Dict.add "entry-fmt-tree" "%J %r %s %c_%d"
   |> Dict.add "date-fmt" "%y-%m-%d"
+  |> Dict.add "editor" "vi"
   |> Dict.add "sync-cmd" ""
   |> Dict.add "index-style" ""
   |> Dict.add "prio-style" ""
@@ -29,7 +30,6 @@ let fallback_options =
 let fallback =
   [ "", fallback_options
   ; "default", Dict.empty ]
-
 
 let default ?(listname="default") todo_path done_path =
   let general = fallback_options
@@ -146,6 +146,7 @@ let sanity_tests =
   ; "entry-fmt-tree", always_ok
   ; "date-fmt",       test_result Date.fmt "date-fmt"
   ; "sync-cmd",       always_ok
+  ; "editor",         always_ok
   ; "index-style",    test_result printer "index-style"
   ; "prio-style",     test_result printer "prio-style"
   ; "text-style",     test_result printer "text-style"

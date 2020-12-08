@@ -40,7 +40,8 @@ let resolve_path path =
   | true  ->
   match Sys.getenv_opt "HOME" with
   | None -> Log.warn "cannot access environment variable HOME"; path
-  | Some home_dir -> home_dir ^ String.(sub path 1 (length path - 1))
+  | Some home_dir ->
+      home_dir ^ String.(sub path 1 (length path - 1))
 
 let parse_list path =
   try Io.read_lines (resolve_path path) |> List.map Entry.of_string_exn with
@@ -870,17 +871,50 @@ let term config_t _listname_t =
 
 end
 
+module Td_edit = struct
+
+let cmd' options _listname source = 
+  let path = match source with
+  | `Todo -> Config.get options "todo-path"
+  | `Done -> Config.get options "done-path"
+  in
+  let editor = Config.get options "editor" in
+  let command = sprintf "%s %s" editor path in
+  match Sys.command command with
+  | 0    -> ()
+  | 127  -> Log.err (sprintf "editor '%s' not found" editor)
+  | code -> Log.err (sprintf "exexpected error code %d" code)
+
+let cmd config listname source =
+  Util.wrap config listname (fun o l -> cmd' o l source)
+
+open Cmdliner
+
+let man = [
+  `S Manpage.s_description;
+  `P "Opens the todo- or done-file in an editor specified in the configuration"
+]
+
+let term config_t listname_t =
+  let doc = "open todo list in an editor" in
+  let source_t = Common_terms.source in
+  Term.(const cmd $ config_t $ listname_t $ source_t),
+  Term.info "edit" ~doc ~sdocs:Manpage.s_common_options ~man
+
+end
+
 open Cmdliner
 
 let config_t =
   let path =
+    let def = Config.default_path () in
     let doc = "Path to the configuration file. If provided, this argument
     overrides the default path ~/.config/td/config and the environment variable
     $(b,TD_CONFIG)." in
-    Arg.(value & opt string (Config.default_path ()) & info ["c"; "config"]
-    ~doc ~docv:"CONFIG-FILE")
+    Arg.(value & opt string def & info ["c"; "config"] ~doc ~docv:"CONFIG-FILE")
   in
-  Term.(const Config.parse_file $ path)
+  let prepare path = Config.parse_file (Util.resolve_path path) in
+  Term.(const prepare $ path)
 
 let listname_t =
   let doc = "Todo list to operate on. Different lists can be managed in
@@ -922,6 +956,7 @@ let () =
     ; Td_sort.term  config_t listname_t
     ; Td_sync.term  config_t listname_t
     ; Td_undo.term  config_t listname_t
+    ; Td_edit.term  config_t listname_t
     ; Td_init.term  config_t listname_t
     ; Td_mod.term   config_t listname_t
     ; Td_add.term   config_t listname_t
