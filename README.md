@@ -22,7 +22,7 @@ $ td add make appointment with doctor +health +2021-05-03
 $ td ls
 1 - have to go shopping +groceries
 2 ! email to colleague +work +project/subproject
-$ - add make appointment with doctor +health +2021-05-03
+3 - add make appointment with doctor +health +2021-05-03
 
 # Selectively list the active entries
 $ td ls +work
