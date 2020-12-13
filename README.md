@@ -8,11 +8,11 @@ Noteworthy features of `td`:
 * Todo lists are stored in a simple human readable and editable format.
 * Can manage as many separate todo lists as you wish.
 * Supports project/subproject, context, and date tags for entries.
-* Powerful filters (regex, wildcards, ranges, ...) supporting arbitrary boolean conjunctions (and, or, not).
+* Powerful filters (regex, wildcards, ranges, ...) supporting arbitrary boolean conjunctions (`and`, `or`, `not`).
 * Customizable entry formatting (custom format strings, ANSI terminal color support).
 * Easy modification of entries by command (`td mod`) or by editing files (`td edit`).
 * Handles even large lists (`10,000` entries) swiftly and without issues.
-* Meaningful error messages (<- maybe this is wishful thinking...)
+* Meaningful error messages (this may in part be wishful thinking...)
 
 A typical sequence of `td` interactions might look like this:
 
@@ -155,6 +155,7 @@ configuration file.
   efficient.
 * Export functionality. We want to be able to export to `todo.txt` and we would
   also like to be able to generate `.ics` files.
+* Auto completion in bash and other common shells.
 
 ## Caveats
 * All operations modifying todo lists currently rewrite the whole todo file.

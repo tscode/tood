@@ -7,7 +7,7 @@ exception NotImplemented of string
 
 module Util = struct
 
-let wrap_config config listname cmd =
+let wrap_config config listname coptions cmd =
   let run config =
     let name = match listname = "" with
     | true  -> List.nth (Config.names config) 0
@@ -15,7 +15,7 @@ let wrap_config config listname cmd =
     in
     match Config.options config name with
     | None   -> sprintf "list '%s' does not exist" listname |> Log.err
-    | Some options -> cmd options listname
+    | Some options -> cmd (Config.merge options coptions) listname
   in
   match config with
   | `Ok config      -> run config
@@ -30,8 +30,8 @@ let wrap_error cmd =
   | NotImplemented err -> Log.err err
   | error -> raise error
 
-let wrap config listname cmd =
-  wrap_error (fun () -> wrap_config config listname cmd)
+let wrap config listname coptions cmd =
+  wrap_error (fun () -> wrap_config config listname coptions cmd)
 
 let resolve_path path =
   if String.length path = 0 then path
@@ -163,7 +163,7 @@ let order ~optional =
   in
   let docv = "ORDER" in
   let value = match optional with
-  | true -> Arg.(value & opt string "none" & info ["o"; "order"] ~docv ~doc)
+  | true -> Arg.(value & opt string "none" & info ["s"; "sort"] ~docv ~doc)
   | false -> Arg.(value & pos 0 string "none" & info [] ~docv ~doc)
   in
   Term.(app (const order)) value |> Term.term_result
@@ -373,7 +373,7 @@ let man =
   ; filters
   ; formatting ]
 
-let term config_t listname_t =
+let term config_t listname_t _coptions_t =
   let quiet_t = Common_terms.quiet_flag in
   let doc = "initialize a configuration file" in
   Term.(const cmd $ config_t $ listname_t $ quiet_t),
@@ -392,8 +392,8 @@ let cmd' options _listname target entry_str =
   let entry = Entry.of_string_exn ~fmt entry_str in
   Util.write_list ~append:true [entry] path
 
-let cmd config listname target entry_str =
-  Util.wrap config listname (fun o l -> cmd' o l target entry_str)
+let cmd config listname coptions target entry_str =
+  Util.wrap config listname coptions (fun o l -> cmd' o l target entry_str)
 
 open Cmdliner
 
@@ -420,10 +420,10 @@ let entry_t =
   Arg.(non_empty & pos_all string [] & info [] ~docv:"ENTRY")
   |> Term.(app (const (String.concat " ")))
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let source_t = Common_terms.source in
   let doc = "create new entries" in
-  Term.(const cmd $ config_t $ listname_t $ source_t $ entry_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t $ source_t $ entry_t),
   Term.info "add" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -501,8 +501,8 @@ let cmd' options _listname source order layout filter =
   |> layout_entries options layout
   |> print_endline
 
-let cmd config listname source order layout filter =
-  Util.wrap config listname (fun o l -> cmd' o l source order layout filter)
+let cmd config listname coptions source order layout filter =
+  Util.wrap config listname coptions (fun o l -> cmd' o l source order layout filter)
 
 open Cmdliner
 
@@ -518,13 +518,13 @@ let layout_t =
   let tree' = `Tree, Arg.info ["t"; "tree"] ~doc in
   Arg.(value & vflag `Flat [tree'])
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "list entries" in
   let filter_t = Common_terms.filter ~optional:true in
   let source_t = Common_terms.source_all in
   let order_t  = Common_terms.order ~optional:true in
-  Term.(const cmd $ config_t $ listname_t $ source_t
-                    $ order_t $ layout_t $ filter_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t
+                  $ source_t $ order_t $ layout_t $ filter_t),
   Term.info "ls" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -546,8 +546,8 @@ let cmd' options _listname source order =
   in
   List.iter reorder paths
   
-let cmd config listname source order =
-  Util.wrap config listname (fun o l -> cmd' o l source order)
+let cmd config listname coptions source order =
+  Util.wrap config listname coptions (fun o l -> cmd' o l source order)
 
 open Cmdliner
 
@@ -557,11 +557,11 @@ let man = [
   order."
 ]
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "sort entries" in
   let source_t = Common_terms.source_all in
   let order_t  = Common_terms.order ~optional:false in
-  Term.(const cmd $ config_t $ listname_t $ source_t $ order_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t $ source_t $ order_t),
   Term.info "sort" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -591,8 +591,9 @@ let cmd' options _listname verbose noprompt failed filter =
     (Config.get options "todo-path")
     (Some (Config.get options "done-path"))
 
-let cmd config listname verbose noprompt failed filter =
-  Util.wrap config listname (fun o l -> cmd' o l verbose noprompt failed filter)
+let cmd config listname coptions verbose noprompt failed filter =
+  Util.wrap config listname coptions
+  (fun o l -> cmd' o l verbose noprompt failed filter)
 
 open Cmdliner
 
@@ -608,13 +609,13 @@ let failed_t   =
   let doc = "Add the tag +failed when moving the selected entries." in
   Arg.(value & flag & info ["f"; "failed"] ~doc)
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "mark entries as done" in
   let filter_t   = Common_terms.filter ~optional:false in
   let verbose_t  = Common_terms.verbose_flag in
   let noprompt_t = Common_terms.noprompt_flag in
-  Term.(const cmd $ config_t $ listname_t $ verbose_t
-                  $ noprompt_t $ failed_t $ filter_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t
+                  $ verbose_t $ noprompt_t $ failed_t $ filter_t),
   Term.info "do" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -632,8 +633,9 @@ let cmd' options _listname verbose noprompt filter =
     (Config.get options "done-path")
     (Some (Config.get options "todo-path"))
 
-let cmd config listname verbose noprompt filter =
-  Util.wrap config listname (fun o l -> cmd' o l verbose noprompt filter)
+let cmd config listname coptions verbose noprompt filter =
+  Util.wrap config listname coptions
+  (fun o l -> cmd' o l verbose noprompt filter)
 
 open Cmdliner
 
@@ -645,12 +647,13 @@ let man = [
   syntax for filters is documented under $(b,td init --help)."
 ]
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "mark entries as undone" in
   let verbose_t  = Common_terms.verbose_flag in
   let noprompt_t = Common_terms.noprompt_flag in
   let filter_t = Common_terms.filter ~optional:false in
-  Term.(const cmd $ config_t $ listname_t $ verbose_t $ noprompt_t $ filter_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t
+                  $ verbose_t $ noprompt_t $ filter_t),
   Term.info "undo" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -675,8 +678,9 @@ let cmd' options _listname verbose noprompt source filter =
   in
   Util.move ?summary ?prompt filter path None
 
-let cmd config listname verbose noprompt source filter =
-  Util.wrap config listname (fun o l -> cmd' o l verbose noprompt source filter)
+let cmd config listname coptions verbose noprompt source filter =
+  Util.wrap config listname coptions
+  (fun o l -> cmd' o l verbose noprompt source filter)
 
 open Cmdliner
 
@@ -688,14 +692,14 @@ let man = [
   syntax for filters is documented under $(b,td init --help)."
 ]
  
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "remove entries" in
   let source_t   = Common_terms.source in
   let filter_t   = Common_terms.filter ~optional:false in
   let verbose_t  = Common_terms.verbose_flag in
   let noprompt_t = Common_terms.noprompt_flag in
-  Term.(const cmd $ config_t $ listname_t $ verbose_t
-                  $ noprompt_t $ source_t $ filter_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t
+                  $ verbose_t $ noprompt_t $ source_t $ filter_t),
   Term.info "rm" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -758,8 +762,8 @@ let cmd' options _listname noprompt verbose source str =
   in
   modify ?summary ?prompt filter path mods
 
-let cmd config listname noprompt verbose source filter_mod_str = 
-  Util.wrap config listname
+let cmd config listname coptions noprompt verbose source filter_mod_str = 
+  Util.wrap config listname coptions
   (fun o l -> cmd' o l noprompt verbose source filter_mod_str)
 
 open Cmdliner
@@ -794,13 +798,13 @@ let filter_mod_t =
   Arg.(non_empty & pos_all string [] & info [] ~doc ~docv:"FILTER MODS")
   |> Term.(app (const (String.concat " ")))
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let source_t = Common_terms.source in
   let verbose_t = Common_terms.verbose_flag in
   let noprompt_t = Common_terms.noprompt_flag in
   let doc = "modify entries" in
-  Term.(const cmd $ config_t $ listname_t $ noprompt_t
-                  $ verbose_t $ source_t $ filter_mod_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t 
+                  $ noprompt_t $ verbose_t $ source_t $ filter_mod_t),
   Term.info "mod" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -816,8 +820,8 @@ let cmd' options _listname =
   | Unix.WEXITED 0 -> Log.info "synchronization successful"
   | _ -> raise (Failure "synchronization was not successful")
 
-let cmd config listname =
-  Util.wrap config listname (fun o l -> cmd' o l)
+let cmd config listname coptions =
+  Util.wrap config listname coptions (fun o l -> cmd' o l)
 
 open Cmdliner
 
@@ -827,9 +831,9 @@ let man = [
   command."
 ]
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "execute a synchronization command" in
-  Term.(const cmd $ config_t $ listname_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t),
   Term.info "sync" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -864,7 +868,7 @@ let man = [
   ...)"
 ]
 
-let term config_t _listname_t =
+let term config_t _listname_t _coptions_t =
   let doc = "list all todo lists" in
   Term.(const cmd $ config_t),
   Term.info "lists" ~doc ~sdocs:Manpage.s_common_options ~man
@@ -919,8 +923,9 @@ let cmd' options _listname source filter =
   let fmt = Config.get options "date-fmt" |> Date.fmt_exn in
   run_with_filter editor path fmt filter
 
-let cmd config listname source filter =
-  Util.wrap config listname (fun o l -> cmd' o l source filter)
+let cmd config listname coptions source filter =
+  Util.wrap config listname coptions
+  (fun o l -> cmd' o l source filter)
 
 open Cmdliner
 
@@ -955,11 +960,11 @@ let man = [
   list."
 ]
 
-let term config_t listname_t =
+let term config_t listname_t coptions_t =
   let doc = "edit entries in an editor" in
   let source_t = Common_terms.source in
   let filter_t = Common_terms.filter ~optional:true in
-  Term.(const cmd $ config_t $ listname_t $ source_t $ filter_t),
+  Term.(const cmd $ config_t $ listname_t $ coptions_t $ source_t $ filter_t),
   Term.info "edit" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
@@ -982,6 +987,20 @@ let listname_t =
   dedicated sections of the configuration file. See $(b,td init --help) for
   documentation." in
   Arg.(value & opt string "" & info ["l"; "list"] ~doc ~docv:"LIST-NAME")
+
+let coptions_t =
+  let doc = "Additional configuration option as $(b,key):$(b,value) pair.
+  Options issued this way take precedence over the ones in the configuration
+  file." in
+  let prepare strs =
+    match Config.parse_options strs with
+    | `Invalid msg -> Error (`Msg msg)
+    | `Ok options -> Ok options
+  in
+  let copts =
+    Arg.(value & opt_all string [] & info ["o"; "option"] ~doc ~docv:"KEY:VALUE")
+  in
+  Term.(const prepare $ copts |> term_result)
 
 let man = [
   `S Manpage.s_description;
@@ -1007,23 +1026,25 @@ let default_cmd =
   let doc = "simple but functional todo list management on the terminal" in
   let sdocs = Manpage.s_common_options in
   let exits = Term.default_exits in
-  let default_ls config = Td_ls.cmd config "" `Todo None `Flat "<true>" in
+  let default_ls config =
+    Td_ls.cmd config "" Config.nooptions `Todo None `Flat "<true>"
+  in
   Term.(const default_ls $ config_t),
   Term.info "td" ~version:_version ~doc ~sdocs ~exits ~man
 
 let () = 
   let commands = [
-      Td_lists.term config_t listname_t
-    ; Td_sort.term  config_t listname_t
-    ; Td_sync.term  config_t listname_t
-    ; Td_undo.term  config_t listname_t
-    ; Td_edit.term  config_t listname_t
-    ; Td_init.term  config_t listname_t
-    ; Td_mod.term   config_t listname_t
-    ; Td_add.term   config_t listname_t
-    ; Td_ls.term    config_t listname_t
-    ; Td_do.term    config_t listname_t
-    ; Td_rm.term    config_t listname_t
+      Td_lists.term config_t listname_t coptions_t
+    ; Td_sort.term  config_t listname_t coptions_t
+    ; Td_sync.term  config_t listname_t coptions_t
+    ; Td_undo.term  config_t listname_t coptions_t
+    ; Td_edit.term  config_t listname_t coptions_t
+    ; Td_init.term  config_t listname_t coptions_t
+    ; Td_mod.term   config_t listname_t coptions_t
+    ; Td_add.term   config_t listname_t coptions_t
+    ; Td_ls.term    config_t listname_t coptions_t
+    ; Td_do.term    config_t listname_t coptions_t
+    ; Td_rm.term    config_t listname_t coptions_t
   ] in
   Term.(exit @@ eval_choice default_cmd commands)
 

@@ -10,6 +10,8 @@ exception ValueError of string
 (* Configuration options for a todo list *)
 type options = string Dict.t
 
+let nooptions = Dict.empty
+
 let fallback_options =
   Dict.empty
   |> Dict.add "todo-path" "./todo.txt"
@@ -135,6 +137,7 @@ let sanity_tests =
     Fun.const None
   in
   let test_result f key value =
+    if value = "" then None else
     match f value with
     | Ok _ -> None
     | Error _ ->
@@ -190,6 +193,23 @@ let default_path () =
   match Sys.getenv_opt "TD_CONFIG" with
   | Some path -> path
   | None      -> "~/.config/td/config"
+
+let parse_options strs =
+  let open Angstrom in
+  let open Parser in
+  let comment = char '#' *> take_all *> return () in
+  let key = symbol <* ws <* char ':' >>| Symbol.to_string in
+  let value = take_till_unescaped_char '#' <* opt comment >>| String.trim in
+  let parser = lift2 (fun key value -> (key, value)) key value in
+  let f options str = match parse_string ~consume:All parser str with
+    | Error _ -> raise (ParseError (sprintf "cannot parse option '%s'" str))
+    | Ok (key, value) -> match add options key value with
+      | Ok options -> options
+      | Error err -> raise (ParseError err)
+  in
+  match List.fold_left f Dict.empty strs with
+  | options -> `Ok options
+  | exception ParseError msg -> `Invalid msg
 
 let parse_file path =
   let open Angstrom in
