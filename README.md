@@ -4,14 +4,14 @@
 formatting todo list entries. **Td** is a command line tool that builds upon
 Tood, aiming to make it comfortable to manage todo lists on the terminal.
 
-Noteworthy features of **td**:
+Noteworthy features of `td`:
 * Todo lists are stored in a simple human readable and editable format.
 * Can manage as many separate todo lists as you wish.
 * Supports project/subproject, context, and date tags for entries.
 * Powerful filters (regex, wildcards, ranges, ...) supporting arbitrary boolean conjunctions (and, or, not).
 * Customizable entry formatting (custom format strings, ANSI terminal color support).
-* Easy modification of entries by command (*td mod*) or by editing files (*td edit*).
-* Handles even large lists (10,000 entries) swiftly and without issues.
+* Easy modification of entries by command (`td mod`) or by editing files (`td edit`).
+* Handles even large lists (`10,000` entries) swiftly and without issues.
 * Meaningful error messages (<- maybe this is wishful thinking...)
 
 A typical sequence of `td` interactions might look like this:
