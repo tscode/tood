@@ -1,8 +1,19 @@
 # Td and Tood
 
-Tood is a simple ocaml library for parsing, manipulating, filtering and
-formatting todo list entries. Td is a command line tool that builds upon Tood,
-aiming to make it comfortable to manage your todo list on the terminal.
+**Tood** is a simple ocaml library for parsing, manipulating, filtering and
+formatting todo list entries. **Td** is a command line tool that builds upon
+Tood, aiming to make it comfortable to manage todo lists on the terminal.
+
+Noteworthy features of **td**:
+* Todo lists are stored in a simple human readable and editable format.
+* Can manage as many separate todo lists as you wish.
+* Supports project/subproject, context, and date tags for entries.
+* Powerful filters (regex, wildcards, ranges, ...) supporting arbitrary boolean conjunctions (and, or, not).
+* Customizable entry formatting (custom format strings, ANSI terminal color support).
+* Easy modification of entries by command (*td mod*) or by editing files (*td edit*).
+* Handles even large lists (10,000 entries) swiftly and without issues.
+* Meaningful error messages (<- maybe this is wishful thinking...)
+
 A typical sequence of `td` interactions might look like this:
 
 ```bash
@@ -36,9 +47,10 @@ $ td do +work
 $ td do email
 $ td do !
 $ td do '"colleague X"'
+$ td do +word and email and ! and '"colleague X"'
 
 # If your selection matches multiple entries, td by default asks
-# if you are serious about it
+# if you are serious about your choice
 $ td do 1..2
 You are about to mark 2 entries as done. Proceed? [Y/n] n
 info: action aborted
@@ -48,12 +60,13 @@ $ td ls --done
 2 ! email to colleague X +work +project/subproject
 ```
 
-This project is currently useable and stable. The author relies on it on a daily
-basis and plans to maintain and extend it in the future. Still, it is mainly the
-product of an autodidactic impulse to improve at ocaml.
-Therefore, if you consider using a terminal application to manage your todo
-list, you should at least also have a look at more serious and wholesome
-efforts, like [todo.txt](http://todotxt.org/).
+This project is useable and stable in its current state. The author relies on it
+on a daily basis and plans to maintain and extend it in the future. Still, it is
+mainly the product of an autodidactic impulse to get used to programming in the
+great language ocaml.
+If you consider using a terminal application to manage your todo lists, you
+should at least also have a look at more serious and wholesome efforts, like
+[todo.txt](http://todotxt.org/).
 
 ## Installation
 Currently, installation by [opam](https://opam.ocaml.org/) is the only supported
@@ -137,11 +150,16 @@ td sync
 Executes a custom (synchronization) command that can be specified in the
 configuration file.
 
+## Todo
+* An interactive mode that makes applying multiple changes more convenient and
+  efficient.
+* Export functionality. We want to be able to export to `todo.txt` and we would
+  also like to be able to generate `.ics` files.
+
 ## Caveats
-* A lot of operations are probably not implemented with optimal efficiency at
-  the moment. Still, with a fast SSD todo lists with ~10,000 entries appear to
-  be maintainable with an acceptable performance (of about 0.5 seconds per usual
-  td command).
+* All operations modifying todo lists currently rewrite the whole todo file.
+  This is certainly not optimal, but it is sufficiently fast on a modern SSD
+  even for huge lists.
 * Td is used by very few people and might contain surprising bugs. So don't be
   shocked if it gets hungry and eats your todo lists alive.
 
