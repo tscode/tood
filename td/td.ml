@@ -873,32 +873,93 @@ end
 
 module Td_edit = struct
 
-let cmd' options _listname source = 
+let run editor path =
+  match Sys.command (sprintf "%s %s" editor path) with
+  | 0    -> ()
+  | 127  -> Log.err (sprintf "editor '%s' not found" editor)
+  | code -> Log.err (sprintf "exexpected error code %d" code)
+
+let amend_indices indices n =
+  let l = List.length indices in
+  let highest = List.nth indices (l-1) in
+  match l < n with
+  | false -> List.filteri (fun i _ -> i < n) indices
+  | true  -> indices @ List.init (n - l) (fun _ -> highest)
+
+let parse_edited_list indices tmp =
+  let lines = Io.read_lines tmp in
+  let indices = amend_indices indices (List.length lines) in
+  let f (i, line) = match line with
+  | "" -> None
+  | _  -> Some (i, Entry.of_string_strict_exn line)
+  in
+  List.filter_map f (List.combine indices lines)
+
+let run_with_filter editor path fmt filter =
+  let filter = Filter.of_string_exn ~fmt filter in
+  let entries = Util.parse_list path |> Entry.index in
+  let sel, unsel = Filter.split_indexed filter entries in
+  let tmp = Filename.temp_file "td-edit-" "" in
+  Util.write_list (Entry.deindex sel) tmp;
+  run editor tmp;
+  let sel' = parse_edited_list (List.map fst sel) tmp in
+  let entries' = List.sort (fun (i, _) (j, _) -> compare i j) (sel' @ unsel) in
+  Util.write_list (Entry.deindex entries') path;
+  Sys.remove tmp
+
+let cmd' options _listname source filter = 
   let path = match source with
   | `Todo -> Config.get options "todo-path"
   | `Done -> Config.get options "done-path"
   in
   let editor = Config.get options "editor" in
-  let command = sprintf "%s %s" editor path in
-  match Sys.command command with
-  | 0    -> ()
-  | 127  -> Log.err (sprintf "editor '%s' not found" editor)
-  | code -> Log.err (sprintf "exexpected error code %d" code)
+  match filter with
+  | "" -> run editor path
+  | _  ->
+  let fmt = Config.get options "date-fmt" |> Date.fmt_exn in
+  run_with_filter editor path fmt filter
 
-let cmd config listname source =
-  Util.wrap config listname (fun o l -> cmd' o l source)
+let cmd config listname source filter =
+  Util.wrap config listname (fun o l -> cmd' o l source filter)
 
 open Cmdliner
 
 let man = [
   `S Manpage.s_description;
-  `P "Opens the todo- or done-file in an editor specified in the configuration"
+  `P "Edit entries in the text editor specified by the configuration. If no
+  filter is provided, the todo- or done-file is opened and can be edited
+  directly. If a filter is provided, a temporary file $(b,tmpfile) with the
+  selected entries is created and opened in the editor. After saving and
+  quitting, changes from editing $(b,tmpfile) (like modified or reordered
+  entries) are adopted.";
+  `P "Note that the line numbers in $(b,tmpfile) are mapped to the indices of
+  the selected entries in an increasing way. For example, it will look like";
+  `P "$(b,entry-5)";
+  `Noblank; `P "$(b,entry-7)";
+  `Noblank; `P "$(b,entry-8)";
+  `P "if entries with indices $(b,5), $(b,7), and $(b,8) are selected.  If the
+  first two lines are exchanged in $(b,tmpfile), then $(b,entry-5) will have
+  index $(b,7) and $(b,entry-7) will have index $(b,5) afterwards. If the first
+  line is deleted, so that $(b,tmpfile) is saved with only two lines left, then
+  $(b,entry-7) would have index 5 and $(b,entry-8) would have index $(b,7)
+  afterwards. To delete an entry without changing the indices of the other
+  entries, the respective line can be left empty (i.e., don't delete the
+  newline character). If $(b,tmpfile) is saved with additional lines, then all
+  additional entries are inserted right after the highest index. 
+  For example, saving the file";
+  `P "$(b,entry-5)";
+  `Noblank; `P "$(b,entry-7)";
+  `Noblank; `P "$(b,entry-8)";
+  `Noblank; `P "$(b,new-entry)";
+  `P "would add a new entry $(b,new-entry) with index $(b,9) in the updated
+  list."
 ]
 
 let term config_t listname_t =
-  let doc = "open todo list in an editor" in
+  let doc = "edit entries in an editor" in
   let source_t = Common_terms.source in
-  Term.(const cmd $ config_t $ listname_t $ source_t),
+  let filter_t = Common_terms.filter ~optional:true in
+  Term.(const cmd $ config_t $ listname_t $ source_t $ filter_t),
   Term.info "edit" ~doc ~sdocs:Manpage.s_common_options ~man
 
 end
